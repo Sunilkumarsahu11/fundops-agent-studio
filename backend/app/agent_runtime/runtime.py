@@ -1,6 +1,6 @@
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from time import sleep
-from typing import Any
 
 from .models import AgentDefinition, AgentRequest, AgentRun, AgentStatus, ExecutionEvent, ValidationResult
 from .planner import Planner, StaticPlanner
@@ -10,7 +10,7 @@ Validator = Callable[[AgentRun], ValidationResult]
 
 
 class AgentRuntime:
-    """Synchronous runtime with planning, retries, event history and validation hooks."""
+    """Synchronous runtime with planning, retries, timeouts, events and validation hooks."""
 
     def __init__(self, registry: ToolRegistry, planner: Planner | None = None, validators: list[Validator] | None = None) -> None:
         self.registry = registry
@@ -20,6 +20,16 @@ class AgentRuntime:
 
     def events(self, run_id: str) -> list[ExecutionEvent]:
         return list(self._events.get(run_id, []))
+
+    def _execute_with_timeout(self, tool: str, inputs: dict, timeout_seconds: float):
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(self.registry.execute, tool, inputs)
+            try:
+                return future.result(timeout=timeout_seconds)
+            except FutureTimeoutError:
+                future.cancel()
+                from .models import ToolResult
+                return ToolResult(success=False, error=f"Tool '{tool}' timed out after {timeout_seconds}s")
 
     def run(self, agent: AgentDefinition, request: AgentRequest, on_event: Callable[[ExecutionEvent], None] | None = None) -> AgentRun:
         run = AgentRun(agent_id=agent.id, request=request)
@@ -50,7 +60,7 @@ class AgentRuntime:
                 result = None
                 for attempt in range(1, policy.max_attempts + 1):
                     emit(AgentStatus.EXECUTING, f"Executing step {step.id}", step.id, attempt)
-                    result = self.registry.execute(step.tool, {**run.context, **step.input})
+                    result = self._execute_with_timeout(step.tool, {**run.context, **step.input}, step.timeout_seconds)
                     if result.success or not policy.retryable or attempt == policy.max_attempts:
                         break
                     if policy.backoff_seconds:
