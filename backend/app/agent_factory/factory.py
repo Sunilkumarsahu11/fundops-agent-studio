@@ -1,0 +1,98 @@
+from typing import Any
+
+from app.agent_runtime.models import AgentDefinition, RetryPolicy, ToolDefinition, WorkflowStep
+from app.agent_runtime.registry import ToolRegistry
+
+from .models import AgentBlueprint, BlueprintStatus, FactoryRequest, FactoryValidation, ToolSelection
+
+
+class AgentFactory:
+    """Builds declarative agents using only allow-listed registered tools."""
+
+    def __init__(self, registry: ToolRegistry) -> None:
+        self.registry = registry
+        self.blueprints: dict[str, AgentBlueprint] = {}
+
+    def draft(self, request: FactoryRequest) -> AgentBlueprint:
+        text = request.request.lower()
+        selections: list[ToolSelection] = []
+        steps: list[WorkflowStep] = []
+
+        if any(word in text for word in ("reconcile", "reconciliation", "compare")):
+            self._add(selections, steps, "reconcile_records", "Deterministic record reconciliation.")
+            if any(word in text for word in ("exception", "exceptions", "flag", "report")):
+                self._add(selections, steps, "build_exception_report", "Produces the evidence-backed exception report.")
+        elif any(word in text for word in ("ingest", "import", "load", "workbook", "excel", "json")):
+            self._add(selections, steps, "inspect_source", "Inspects source structure before ingestion.")
+
+        if not steps:
+            selections.append(ToolSelection(tool="echo", reason="Safe fallback for unsupported requests.", confidence=0.2))
+            steps.append(WorkflowStep(id="step_1", tool="echo", input={"request": request.request}))
+
+        blueprint = AgentBlueprint(
+            name=request.name or self._name(request.request),
+            description=f"Generated from: {request.request}",
+            source_request=request.request,
+            tools=selections,
+            steps=steps,
+            inputs=request.inputs,
+            metadata={"planner": "deterministic", "governance": "allow-listed-tools-only"},
+        )
+        self.blueprints[str(blueprint.id)] = blueprint
+        return blueprint
+
+    def validate(self, blueprint: AgentBlueprint) -> FactoryValidation:
+        errors: list[str] = []
+        warnings: list[str] = []
+        seen: set[str] = set()
+        for step in blueprint.steps:
+            if step.id in seen:
+                errors.append(f"Duplicate step id: {step.id}")
+            seen.add(step.id)
+            if not self.registry.has(step.tool):
+                errors.append(f"Unknown tool: {step.tool}")
+            definition = self.registry.get(step.tool)
+            if definition and definition.deterministic and step.tool in {"reconcile_records", "build_exception_report"}:
+                if not step.required:
+                    errors.append(f"Financial control step must be required: {step.id}")
+        if not blueprint.steps:
+            errors.append("Blueprint must contain at least one step")
+        if any(selection.confidence < 0.8 for selection in blueprint.tools):
+            warnings.append("One or more tool selections have low confidence and should be reviewed.")
+        return FactoryValidation(valid=not errors, errors=errors, warnings=warnings)
+
+    def publish(self, blueprint: AgentBlueprint, approved_by: str) -> AgentDefinition:
+        if not approved_by.strip():
+            raise ValueError("approved_by is required")
+        validation = self.validate(blueprint)
+        if not validation.valid:
+            raise ValueError("Cannot publish invalid blueprint: " + "; ".join(validation.errors))
+        blueprint.status = BlueprintStatus.PUBLISHED
+        blueprint.metadata["approved_by"] = approved_by
+        blueprint.metadata["approval_required"] = True
+        self.blueprints[str(blueprint.id)] = blueprint
+        return AgentDefinition(
+            id=f"generated-{blueprint.id}",
+            name=blueprint.name,
+            description=blueprint.description,
+            steps=blueprint.steps,
+        )
+
+    def get(self, blueprint_id: str) -> AgentBlueprint | None:
+        return self.blueprints.get(blueprint_id)
+
+    def _add(self, selections: list[ToolSelection], steps: list[WorkflowStep], tool: str, reason: str) -> None:
+        if not self.registry.has(tool):
+            return
+        selections.append(ToolSelection(tool=tool, reason=reason, confidence=0.95))
+        definition: ToolDefinition | None = self.registry.get(tool)
+        steps.append(WorkflowStep(
+            id=f"step_{len(steps) + 1}", tool=tool, required=True,
+            timeout_seconds=definition.timeout_seconds if definition else 30,
+            retry_policy=definition.retry_policy if definition else RetryPolicy(),
+        ))
+
+    @staticmethod
+    def _name(request: str) -> str:
+        words = request.strip().split()[:7]
+        return " ".join(words).rstrip(".,") or "Generated FundOps Agent"
