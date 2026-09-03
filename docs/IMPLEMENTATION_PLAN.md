@@ -67,8 +67,24 @@ Implemented:
 
 Key rule: **the ingestion layer never silently discards an unmapped source field or fabricates a value.**
 
-## Phase 4 — Deterministic Reconciliation Engine
-Exact/fuzzy matching, amount/date/currency checks, tolerances, missing/duplicate detection, sign and aggregation checks, reason codes and evidence.
+## Phase 4 — Deterministic Reconciliation Engine — COMPLETE
+Implemented:
+- deterministic composite-key record matching;
+- duplicate detection on both datasets;
+- missing-left and missing-right exception detection;
+- absolute and percentage amount tolerances;
+- amount variance and sign checks;
+- currency mismatch checks;
+- configurable date variance tolerance;
+- deterministic materiality classification;
+- stable reconciliation status and reason codes;
+- source provenance/evidence attached to every result;
+- reconciliation summary with counts and total absolute variance;
+- FastAPI `POST /reconciliation/run` endpoint;
+- automated reconciliation tests;
+- explicit separation between deterministic financial controls and future LLM explanations.
+
+Key rule: **LLMs do not calculate amounts, decide tolerances, determine materiality, or override reconciliation outcomes.**
 
 ## Phase 5 — Fund Reconciliation Agent
 Upload → schema detection → mapping → normalization → reconciliation → financial validation → materiality ranking → explanation → evidence-backed report/export.
