@@ -2,36 +2,26 @@ from collections.abc import Callable
 from time import sleep
 from typing import Any
 
-from .models import (
-    AgentDefinition,
-    AgentRequest,
-    AgentRun,
-    AgentStatus,
-    ExecutionEvent,
-    ValidationResult,
-)
+from .models import AgentDefinition, AgentRequest, AgentRun, AgentStatus, ExecutionEvent, ValidationResult
+from .planner import Planner, StaticPlanner
 from .registry import ToolRegistry
 
 Validator = Callable[[AgentRun], ValidationResult]
 
 
 class AgentRuntime:
-    """Synchronous runtime with retries, event history and validation hooks."""
+    """Synchronous runtime with planning, retries, event history and validation hooks."""
 
-    def __init__(self, registry: ToolRegistry, validators: list[Validator] | None = None) -> None:
+    def __init__(self, registry: ToolRegistry, planner: Planner | None = None, validators: list[Validator] | None = None) -> None:
         self.registry = registry
+        self.planner = planner or StaticPlanner()
         self.validators = validators or []
         self._events: dict[str, list[ExecutionEvent]] = {}
 
     def events(self, run_id: str) -> list[ExecutionEvent]:
         return list(self._events.get(run_id, []))
 
-    def run(
-        self,
-        agent: AgentDefinition,
-        request: AgentRequest,
-        on_event: Callable[[ExecutionEvent], None] | None = None,
-    ) -> AgentRun:
+    def run(self, agent: AgentDefinition, request: AgentRequest, on_event: Callable[[ExecutionEvent], None] | None = None) -> AgentRun:
         run = AgentRun(agent_id=agent.id, request=request)
         self._events[str(run.id)] = []
 
@@ -45,12 +35,13 @@ class AgentRuntime:
         try:
             emit(AgentStatus.UNDERSTANDING, "Request accepted")
             run.context.update(request.inputs)
-            emit(AgentStatus.PLANNING, "Workflow loaded")
-            if not agent.steps:
-                raise ValueError("Agent has no workflow steps")
+            emit(AgentStatus.PLANNING, "Building execution plan")
+            steps = self.planner.plan(request, agent, self.registry.definitions())
+            if not steps:
+                raise ValueError("Agent plan has no workflow steps")
 
             emit(AgentStatus.EXECUTING, "Executing workflow")
-            for step in agent.steps:
+            for step in steps:
                 if not self.registry.has(step.tool):
                     if step.required:
                         raise RuntimeError(f"Step '{step.id}' failed: Unknown tool: {step.tool}")
@@ -74,8 +65,7 @@ class AgentRuntime:
             emit(AgentStatus.VALIDATING, "Validating execution result")
             validation_errors: list[str] = []
             for validator in self.validators:
-                validation = validator(run)
-                validation_errors.extend(validation.errors)
+                validation_errors.extend(validator(run).errors)
             if validation_errors:
                 raise RuntimeError("Validation failed: " + "; ".join(validation_errors))
 
