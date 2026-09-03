@@ -79,13 +79,22 @@ class FundModelStore:
                     session.add(RelationshipDefinitionRow(model_id=model.id, version=model.version, entity_name=entity.name, relationship_name=relationship.name, definition_json=relationship.model_dump(mode="json")))
         return model
 
+    @staticmethod
+    def _to_model(row: FundModelVersionRow | None) -> FundModelDefinition | None:
+        return FundModelDefinition.model_validate(row.definition_json) if row else None
+
     def get(self, model_id: str, version: int | None = None) -> FundModelDefinition | None:
         with Session(self.engine) as session:
             if version is None:
                 row = session.scalars(select(FundModelVersionRow).where(FundModelVersionRow.model_id == model_id).order_by(FundModelVersionRow.version.desc())).first()
             else:
                 row = session.get(FundModelVersionRow, (model_id, version))
-            return FundModelDefinition.model_validate(row.definition_json) if row else None
+            return self._to_model(row)
+
+    def get_active(self, model_id: str) -> FundModelDefinition | None:
+        with Session(self.engine) as session:
+            row = session.scalars(select(FundModelVersionRow).where(FundModelVersionRow.model_id == model_id, FundModelVersionRow.status == "active").order_by(FundModelVersionRow.version.desc())).first()
+            return self._to_model(row)
 
     def list(self, model_id: str | None = None) -> list[FundModelDefinition]:
         with Session(self.engine) as session:
