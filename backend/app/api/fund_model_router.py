@@ -109,11 +109,11 @@ def get_migration_plan(model_id: str, from_version: int, to_version: int):
 @router.post("/{model_id}/validate-record")
 def validate_model_record(model_id: str, record: CanonicalRecord, version: int | None = None):
     try:
-        model = service.store.get(model_id, version)
+        model = service.store.get(model_id, version) if version is not None else service.store.get_active(model_id)
         if model is None:
-            raise KeyError("Fund model not found")
+            raise KeyError("Active fund model not found")
         errors = validate_record(record, model)
-        return {"valid": not errors, "errors": errors, "model": {"id": model.id, "version": model.version}}
+        return {"valid": not errors, "errors": errors, "model": {"id": model.id, "version": model.version, "status": model.status}}
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
