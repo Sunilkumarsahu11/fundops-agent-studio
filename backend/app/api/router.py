@@ -13,6 +13,8 @@ from app.api.ingestion_router import router as ingestion_router
 from app.api.reconciliation_router import router as reconciliation_router
 from app.api.fund_reconciliation_router import router as fund_reconciliation_router
 from app.api.fund_ops_router import router as fund_ops_router
+from app.api.governance_router import router as governance_router
+from app.api.governance_router import service as governance_service
 
 router = APIRouter()
 store = InMemoryAgentStore()
@@ -25,6 +27,7 @@ router.include_router(reconciliation_router)
 router.include_router(fund_reconciliation_router)
 router.include_router(agent_factory_router)
 router.include_router(fund_ops_router)
+router.include_router(governance_router)
 
 
 @router.get("/health", tags=["system"])
@@ -64,7 +67,9 @@ def run_agent(agent_id: str, request: AgentRequest) -> AgentRun:
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
     run = runtime.run(agent, request)
-    return store.save_run(run)
+    saved = store.save_run(run)
+    governance_service.capture_run(agent, saved, runtime.events(str(run.id)))
+    return saved
 
 
 @router.get("/runs/{run_id}", response_model=AgentRun, tags=["runs"])
