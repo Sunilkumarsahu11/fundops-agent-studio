@@ -7,12 +7,14 @@ from app.agent_runtime.models import AgentDefinition, AgentRequest, AgentRun, To
 from app.agent_runtime.registry import ToolRegistry
 from app.agent_runtime.runtime import AgentRuntime
 from app.agent_runtime.store import InMemoryAgentStore
+from app.api.fund_model_router import router as fund_model_router
 
 router = APIRouter()
 store = InMemoryAgentStore()
 registry = ToolRegistry()
 register_builtins(registry)
 runtime = AgentRuntime(registry)
+router.include_router(fund_model_router)
 
 
 @router.get("/health", tags=["system"])
