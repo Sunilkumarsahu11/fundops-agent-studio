@@ -1,10 +1,12 @@
 from fastapi import APIRouter, Header, HTTPException
 
 from app.core.config import get_settings
-from app.fund_model.default_model import build_default_model
 from app.fund_model.persistence import FundModelStore
 from app.fund_model.service import FundModelService
 from app.fund_model.schema import FundModelDefinition
+from app.fund_model.records import CanonicalRecord
+from app.fund_model.validation import validate_record
+from app.fund_model.migration import migration_plan
 
 router = APIRouter(prefix="/fund-models", tags=["fund-models"])
 service = FundModelService(FundModelStore(get_settings().database_url))
@@ -88,6 +90,30 @@ def get_json_schema(model_id: str, version: int | None = None):
 def compare_versions(model_id: str, from_version: int, to_version: int):
     try:
         return service.diff(model_id, from_version, to_version)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/{model_id}/migration-plan")
+def get_migration_plan(model_id: str, from_version: int, to_version: int):
+    try:
+        old = service.store.get(model_id, from_version)
+        new = service.store.get(model_id, to_version)
+        if old is None or new is None:
+            raise KeyError("Both model versions must exist")
+        return migration_plan(old, new)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/{model_id}/validate-record")
+def validate_model_record(model_id: str, record: CanonicalRecord, version: int | None = None):
+    try:
+        model = service.store.get(model_id, version)
+        if model is None:
+            raise KeyError("Fund model not found")
+        errors = validate_record(record, model)
+        return {"valid": not errors, "errors": errors, "model": {"id": model.id, "version": model.version}}
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
