@@ -99,8 +99,22 @@ Implemented:
 
 Current Phase 5 accepts canonical records directly. File-upload orchestration can now be composed from the existing Phase 3 ingestion APIs without duplicating ingestion logic.
 
-## Phase 6 — Agent Factory
-Natural language → intent/domain/inputs → workflow generation → tool selection → workflow validation → human review → publish. Generated workflows remain declarative YAML/JSON and execute only registered tools.
+## Phase 6 — Agent Factory — COMPLETE
+Implemented:
+- natural-language factory request model;
+- deterministic intent-to-workflow planner with safe fallback;
+- registered-tool selection with confidence/reason metadata;
+- declarative `AgentBlueprint` generation;
+- workflow validator enforcing registered tools and deterministic financial-control boundaries;
+- draft → validated → published lifecycle;
+- explicit human approval gate before publish;
+- conversion of approved blueprints into existing Agent Runtime `AgentDefinition` objects;
+- starter templates for reconciliation and source inspection;
+- FastAPI factory APIs;
+- automated tests covering generation, validation and approval-gated publishing;
+- Phase 6 architecture/governance documentation.
+
+Key rule: **the factory never executes generated workflows. It can only compose allow-listed tools; financial-control tools must remain deterministic. A future LLM planner must implement the same contract.**
 
 ## Phase 7 — Fund Operations Agent Library
 Reconciliation, Excel quality/risk, capital calls, NAV, valuation review, normalization, portfolio exposure, investor reporting, exception investigation and fund-data Q&A.
