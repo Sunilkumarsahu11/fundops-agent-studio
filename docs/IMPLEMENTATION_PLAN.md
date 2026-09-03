@@ -86,8 +86,18 @@ Implemented:
 
 Key rule: **LLMs do not calculate amounts, decide tolerances, determine materiality, or override reconciliation outcomes.**
 
-## Phase 5 — Fund Reconciliation Agent
-Upload → schema detection → mapping → normalization → reconciliation → financial validation → materiality ranking → explanation → evidence-backed report/export.
+## Phase 5 — Fund Reconciliation Agent — COMPLETE
+Implemented:
+- reusable `FundReconciliationAgent` orchestration boundary;
+- deterministic engine invocation with configurable keys and tolerances;
+- evidence-backed exception report projection;
+- materiality and reason-code preservation;
+- FastAPI `POST /fund-reconciliation/run` endpoint;
+- FastAPI `POST /fund-reconciliation/report` endpoint;
+- automated agent/evidence tests;
+- documentation of the LLM governance boundary.
+
+Current Phase 5 accepts canonical records directly. File-upload orchestration can now be composed from the existing Phase 3 ingestion APIs without duplicating ingestion logic.
 
 ## Phase 6 — Agent Factory
 Natural language → intent/domain/inputs → workflow generation → tool selection → workflow validation → human review → publish. Generated workflows remain declarative YAML/JSON and execute only registered tools.
