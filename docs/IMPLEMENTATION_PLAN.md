@@ -35,25 +35,51 @@ Implemented reusable orchestration around the deterministic reconciliation engin
 Implemented natural-language request → declarative blueprint → tool selection → validation → human approval → published Agent Runtime definition, with starter templates and APIs.
 
 ## Phase 7 — Fund Operations Agent Library — COMPLETE
-Implemented reusable contracts, a 10-agent catalog, governed execution facade, deterministic reconciliation, exception investigation, Fund Data Q&A, explicit `not_implemented` handling for deferred specialist workflows, APIs, tests and documentation.
+Implemented:
+- reusable `FundAgentSpec`, `AgentInput` and `AgentOutput` contracts;
+- catalog of 10 FundOps agents: reconciliation, Excel quality, capital-call review, NAV review, valuation review, normalization, portfolio exposure, investor reporting, exception investigation and fund-data Q&A;
+- governed `FundOperationsLibrary` execution facade;
+- fully enabled deterministic reconciliation agent backed by Phase 4/5 controls;
+- exception investigation projection that preserves supplied deterministic exceptions;
+- record-based Fund Data Q&A with source evidence and no fabrication of missing records;
+- explicit `not_implemented` status for catalogued domain agents whose specialized workflow is deferred rather than using unsafe fallbacks;
+- FastAPI catalog/detail/run endpoints under `/fund-ops`;
+- automated catalog, reconciliation/evidence and Q&A tests;
+- Phase 7 documentation.
 
 Key rule: **the library is capability-driven. Catalogued agents cannot silently execute arbitrary logic; financial controls remain deterministic and evidence-backed.**
 
 ## Phase 8 — Evidence, Audit & Human-in-the-Loop — COMPLETE
 Implemented:
-- append-only audit event projection tied to agent runs and actors;
-- run snapshots capturing request, output, status and agent version;
-- evidence items linked to run/record provenance including source file, sheet, cell, JSON path and source field;
-- automatic governance capture after runtime API execution;
-- approval request/decision lifecycle with pending/approved/rejected states;
-- prevention of approval decisions without a run snapshot and prevention of double decisions;
-- governance APIs for audit, evidence, snapshots and approvals;
-- automated governance tests and documentation.
+- governed audit event capture for agent execution;
+- immutable run snapshots containing the request, agent version, status and output;
+- evidence extraction from canonical provenance and run output;
+- approval lifecycle with pending, approved and rejected states;
+- explicit actor/decision/reason fields for human approvals;
+- audit and evidence APIs under `/governance`;
+- approval APIs for consequential workflow decisions;
+- tests covering audit capture, evidence and approval transitions;
+- Phase 8 governance documentation.
 
-Persistence remains an explicit in-memory boundary for this phase; the API contracts are ready for a durable PostgreSQL governance adapter.
+Key rule: **material financial outcomes remain deterministic, evidence-backed and reviewable; human approval is explicit and never inferred from an LLM response.**
 
-## Phase 9 — Agent Studio UI
-Dashboard, Agent Builder and Run Detail. Hackathon priority: upload → describe → execute → review exceptions → inspect evidence → export.
+## Phase 9 — Agent Studio UI — IN PROGRESS
+Implemented the first hackathon-ready workspace slice:
+- agent library connected to `/fund-ops/agents`;
+- natural-language task composer;
+- selected-agent/version display;
+- workflow execution against the backend;
+- run status/result panel;
+- responsive desktop/mobile layout;
+- visual treatment for deterministic controls and evidence/audit readiness.
+
+Remaining Phase 9 work:
+- real Excel/JSON file upload wired to `/ingestion/run`;
+- ingestion mapping/review screen;
+- reconciliation configuration and exception table;
+- run detail with audit timeline and evidence drill-down;
+- approval controls;
+- export report action.
 
 ## Phase 10 — LLM Optimization, Evaluation & Guardrails
 Prompt/version management, structured outputs, model routing, token/cost tracking, cached mappings, eval datasets, golden tests, hallucination/numeric checks and prompt-injection defenses.
@@ -65,4 +91,4 @@ React → FastAPI → Agent Runtime → PostgreSQL → Object Storage. Later add
 Demonstrate a realistic reconciliation workflow, evidence-backed exceptions, export, and generation of a second agent through Agent Factory. Track time saved, exceptions detected, accuracy, evidence coverage, agent creation time and LLM cost.
 
 ## Recommended hackathon scope
-**Minimum compelling product: Phases 0–8 + a thin slice of 9.**
+**Minimum compelling product: Phases 0–8 + the thin slice of Phase 9 currently implemented.**
