@@ -1,116 +1,146 @@
 # Phase 2 — Configurable Fund Data Model
 
+## Status
+
+**Complete.** Phase 2 is now a metadata-driven, versioned schema registry with PostgreSQL persistence, canonical records, provenance, JSON Schema generation, validation, schema diff/migration planning, and tenant/client overlays.
+
 ## Design decision
 
 The canonical fund model is **metadata-driven**, not hard-coded into Python classes.
 
-A fund model consists of:
-
 ```text
 FundModelDefinition
- ├── version
- ├── status
+ ├── id / version / status
  ├── EntityDefinition[]
  │    ├── FieldDefinition[]
  │    └── RelationshipDefinition[]
  └── metadata
 ```
 
-This allows a fund manager or administrator to introduce fields, entities, validation rules and relationships without changing application code.
+This allows fund managers or administrators to introduce fields, entities, validation rules and relationships without changing application code.
 
-## Versioning
+## Version lifecycle
 
-Models are immutable by version once activated. A change creates a new version:
-
-```text
-private-markets-core v1  → active
-private-markets-core v2  → draft
-private-markets-core v3  → future
-```
-
-Existing data remains associated with the model version that interpreted it. This prevents a schema change from silently changing historical meaning.
-
-## Field types
-
-Supported initial types:
-
-- string
-- integer
-- number
-- boolean
-- date
-- datetime
-- money
-- enum
-- reference
-- json
-
-The `validation` object is intentionally extensible for constraints such as min/max, regex, precision, currency rules or domain-specific validation.
-
-## Relationships
-
-Relationships are metadata too. For example:
+Versions are immutable once created by policy. A change creates a new version; activation retires the previous active version:
 
 ```text
-CapitalCall → Commitment → Investor
-Investment  → Fund
-Valuation   → Investment
+private-markets-core v1  → retired
+private-markets-core v2  → active
+private-markets-core v3  → draft
 ```
 
-The application can therefore inspect the graph without hard-coding every relationship.
+Historical records retain the model id/version that interpreted them. This prevents schema changes from silently changing historical meaning.
 
-## Storage strategy
+## PostgreSQL persistence
 
-For the hackathon, the canonical definition should be stored as versioned schema metadata. Operational records can use JSONB-backed payloads initially, with relational indexes/columns added only where query or reconciliation performance requires them.
+The registry persists both the complete definition and queryable metadata in:
 
-This avoids the two extremes:
+- `fund_models`
+- `fund_model_versions`
+- `entity_definitions`
+- `field_definitions`
+- `relationship_definitions`
 
-- hard-coded tables that require migrations for every client-specific field;
-- a completely opaque EAV model that makes analytics and validation painful.
+Alembic migration `0001_fund_model_registry` creates these tables. The canonical definition is retained as JSON so the registry can evolve without requiring an application-code deployment for every client-specific field.
 
-## Source provenance
+Run migrations from `backend` with:
 
-Every normalized record should eventually carry provenance such as:
+```bash
+alembic upgrade head
+```
+
+## Schema Registry API
+
+- `POST /fund-models` — create a model/version
+- `GET /fund-models` — list versions
+- `GET /fund-models/{id}` — get a version; omit `version` for latest
+- `GET /fund-models/{id}/versions` — list all versions
+- `POST /fund-models/{id}/versions` — create a new version
+- `POST /fund-models/{id}/versions/{version}/activate` — activate and retire the previous active version
+- `GET /fund-models/{id}/schema` — generate JSON Schema
+- `GET /fund-models/{id}/diff?from_version=1&to_version=2` — compare versions
+- `GET /fund-models/{id}/migration-plan?...` — produce a reviewable migration plan
+- `POST /fund-models/{id}/validate-record` — validate a canonical record
+- `POST /fund-models/{id}/overlay?base_version=1` — create a client/tenant-specific composed model
+- `POST /fund-models/bootstrap` — seed the starter private-markets model
+
+## Canonical record envelope
+
+Normalized operational data uses a stable envelope:
 
 ```json
 {
-  "source_file": "q2_valuation.xlsx",
-  "source_sheet": "Portfolio",
-  "source_cell": "H27",
-  "source_field": "Fair Value",
-  "ingestion_run_id": "...",
+  "record_id": "uuid",
   "model_id": "private-markets-core",
-  "model_version": 2
+  "model_version": 2,
+  "entity": "Valuation",
+  "data": {
+    "valuation_id": "VAL-1001",
+    "valuation_date": "2026-06-30",
+    "value": 12500000,
+    "currency": "GBP"
+  },
+  "provenance": [
+    {
+      "source_file": "q2_valuation.xlsx",
+      "source_sheet": "Portfolio",
+      "source_cell": "H27",
+      "source_field": "Fair Value",
+      "ingestion_run_id": "uuid"
+    }
+  ]
 }
 ```
 
-Provenance belongs to the normalized data layer, not inside the business field definition itself.
+This gives downstream reconciliation and agent explanations a source-evidence trail.
 
-## Safe schema evolution
+## JSON Schema generation
 
-Allowed changes should include:
+`FundModelDefinition` can be converted into JSON Schema, including field types, enum constraints, descriptions, validation metadata, required fields, model id and version.
 
-- add optional field;
-- add new enum value;
-- add metadata/validation;
-- add relationship;
-- deprecate field for future versions;
-- rename a field through an explicit migration mapping.
+## Validation
 
-Dangerous changes require a new model version and migration/reprocessing plan:
+Canonical records are checked against their exact model version. Validation detects:
 
-- changing a field's semantic meaning;
-- changing a monetary unit or sign convention;
-- changing an entity's identity key;
-- changing relationship cardinality;
-- changing required/nullable semantics for existing data.
+- unknown entities/fields;
+- missing required fields;
+- illegal nulls;
+- invalid primitive types;
+- invalid enum values;
+- invalid references/JSON shapes.
 
-## Next Phase 2 work
+Business calculations such as NAV, IRR and reconciliation tolerances remain deterministic application logic rather than LLM-generated logic.
 
-1. Persist model definitions and versions in PostgreSQL.
-2. Add schema registry APIs.
-3. Add canonical record envelope and provenance.
-4. Add JSON Schema generation from `FundModelDefinition`.
-5. Add migration/diff tooling between model versions.
-6. Add validation of records against the active model.
-7. Add tenant/client-specific model overlays.
+## Schema diff and migration planning
+
+Diffs classify changes as low/medium/high risk. High-risk changes include removing entities/fields, changing field types, and making an existing field required.
+
+Migration plans are intentionally **review-only**. The system does not silently mutate financial data. A future migration executor can require explicit human approval before applying transformations/backfills.
+
+## Tenant/client overlays
+
+A tenant-specific model can inherit the base model and add or override entities, fields, relationships and metadata. The resulting model records its base model id/version so lineage remains explicit.
+
+Tenant identity is carried through `metadata.tenant_id` and the `X-Tenant-ID` API header in this hackathon implementation. Production deployment should replace this with authenticated tenant context and enforce tenant isolation at the persistence layer.
+
+## Safe evolution rules
+
+Prefer:
+
+- adding optional fields;
+- adding enum values;
+- adding validation metadata;
+- adding relationships;
+- deprecating fields in a new version.
+
+Require a new version plus migration/reprocessing review for:
+
+- semantic changes;
+- monetary unit/sign convention changes;
+- identity-key changes;
+- relationship cardinality changes;
+- required/nullable changes affecting existing data.
+
+## Exit criteria
+
+Phase 2 delivers the configurable foundation required by Phase 3 ingestion and Phase 4 reconciliation. The ingestion layer can now resolve a model version, validate normalized records, preserve provenance, and generate machine-readable schemas without hard-coding every client's fund structure.
