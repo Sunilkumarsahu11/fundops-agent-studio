@@ -1,40 +1,49 @@
 from app.agent_runtime.builtins import echo
-from app.agent_runtime.models import AgentDefinition, AgentRequest, AgentStatus, WorkflowStep
+from app.agent_runtime.models import AgentDefinition, AgentRequest, AgentStatus, RetryPolicy, ToolDefinition, WorkflowStep
 from app.agent_runtime.registry import ToolRegistry
 from app.agent_runtime.runtime import AgentRuntime
 
 
 def build_runtime() -> AgentRuntime:
     registry = ToolRegistry()
-    registry.register("echo", echo)
+    registry.register(ToolDefinition(name="echo", description="test"), echo)
     return AgentRuntime(registry)
 
 
-def test_runtime_executes_workflow() -> None:
-    agent = AgentDefinition(
-        id="demo-agent",
-        name="Demo Agent",
-        steps=[WorkflowStep(id="step-1", tool="echo")],
-    )
-
-    run = build_runtime().run(
-        agent,
-        AgentRequest(request="echo this", inputs={"value": 42}),
-    )
-
+def test_runtime_executes_workflow_and_records_events() -> None:
+    runtime = build_runtime()
+    agent = AgentDefinition(id="demo-agent", name="Demo Agent", steps=[WorkflowStep(id="step-1", tool="echo")])
+    run = runtime.run(agent, AgentRequest(request="echo this", inputs={"value": 42}))
     assert run.status == AgentStatus.COMPLETED
     assert run.context["step-1"]["received"]["value"] == 42
     assert run.errors == []
+    assert any(event.status == AgentStatus.COMPLETED for event in runtime.events(str(run.id)))
 
 
 def test_runtime_fails_on_unknown_required_tool() -> None:
-    agent = AgentDefinition(
-        id="broken-agent",
-        name="Broken Agent",
-        steps=[WorkflowStep(id="step-1", tool="missing")],
-    )
-
+    agent = AgentDefinition(id="broken-agent", name="Broken Agent", steps=[WorkflowStep(id="step-1", tool="missing")])
     run = build_runtime().run(agent, AgentRequest(request="run"))
-
     assert run.status == AgentStatus.FAILED
     assert "Unknown tool" in run.errors[0]
+
+
+def test_runtime_retries_failed_tool() -> None:
+    calls = {"count": 0}
+
+    def flaky(_: dict) -> dict:
+        calls["count"] += 1
+        if calls["count"] < 3:
+            raise RuntimeError("temporary failure")
+        return {"ok": True}
+
+    registry = ToolRegistry()
+    registry.register(ToolDefinition(name="flaky"), flaky)
+    runtime = AgentRuntime(registry)
+    agent = AgentDefinition(
+        id="retry-agent",
+        name="Retry Agent",
+        steps=[WorkflowStep(id="step-1", tool="flaky", retry_policy=RetryPolicy(max_attempts=3))],
+    )
+    run = runtime.run(agent, AgentRequest(request="retry"))
+    assert run.status == AgentStatus.COMPLETED
+    assert calls["count"] == 3
