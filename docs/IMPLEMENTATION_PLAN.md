@@ -33,10 +33,21 @@ Reusable runtime is implemented with:
 Lifecycle:
 `RECEIVE → UNDERSTAND → PLAN → EXECUTE → VALIDATE → EXPLAIN → COMPLETE`
 
-Exit criteria: **met for Phase 1 core**. PostgreSQL durability and LLM planning are intentionally deferred to later phases.
+## Phase 2 — Configurable Canonical Fund Data Model — COMPLETE
+Implemented as metadata rather than hard-coded entity classes:
+- versioned `FundModelDefinition`, entities, fields and relationships;
+- PostgreSQL persistence for models, versions, entities, fields and relationships;
+- Alembic migration `0001_fund_model_registry`;
+- schema registry REST APIs and activation lifecycle;
+- canonical record envelope with provenance/evidence;
+- JSON Schema generation;
+- record validation against an exact model version;
+- schema diff with compatibility/risk classification;
+- reviewable migration-plan generation (no silent data mutation);
+- tenant/client overlay composition with base-model lineage;
+- unit tests for schema generation, breaking changes and overlays.
 
-## Phase 2 — Canonical Fund Data Model — NEXT
-Entities: Fund, Investor, Commitment, CapitalCall, Distribution, PortfolioCompany, Investment, Valuation, Transaction, NAV, FundPeriod, Currency. Add Pydantic models, PostgreSQL schema/migrations, relationships and provenance.
+Key rule: **active model versions are never edited in place**. Changes create a new version and require review before activation.
 
 ## Phase 3 — Data Ingestion & Schema Mapping
 Excel/JSON readers, table/header detection, type inference, normalization, schema mapping, entity matching and lineage.
