@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
-from app.fund_model.record import CanonicalRecord
+from app.fund_model.records import CanonicalRecord
 
 
 class AgentKind(str, Enum):
