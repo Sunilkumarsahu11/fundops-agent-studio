@@ -2,18 +2,20 @@
 
 ## Objective
 
-Create the reusable execution engine underneath every FundOps agent.
+Build the reusable execution engine underneath every FundOps agent. The runtime is deliberately deterministic at the execution boundary: agents can select registered tools, but cannot execute arbitrary generated code.
 
-## Runtime contract
+## Runtime lifecycle
 
 ```text
 AgentRequest
     ↓
 UNDERSTAND
     ↓
-PLAN
+PLAN (Planner interface)
     ↓
-EXECUTE workflow steps
+EXECUTE registered tools
+    ↓
+RETRY transient failures
     ↓
 VALIDATE
     ↓
@@ -22,49 +24,70 @@ EXPLAIN
 COMPLETED / FAILED
 ```
 
-## Components
+## Implemented components
 
-### AgentDefinition
+- **AgentDefinition** — declarative agent metadata and workflow steps.
+- **WorkflowStep** — allow-listed tool reference, inputs, required flag, timeout and retry policy.
+- **ToolDefinition** — description, input/output JSON-schema placeholders, determinism, version and default retry/timeout metadata.
+- **ToolRegistry** — controlled tool execution boundary; unknown tools fail explicitly.
+- **Planner / StaticPlanner** — planner abstraction ready for an LLM-backed planner later.
+- **AgentRuntime** — executes planner output, maintains context, retries failures, emits events and invokes validators.
+- **InMemoryAgentStore** — persistence boundary for definitions and runs; PostgreSQL replaces this in Phase 2.
+- **ExecutionEvent** — lifecycle/step/attempt history retained for each run.
+- **ValidationResult** — structured validation hook contract.
+- **FastAPI API** — agent creation/list/get, tool discovery, run execution, run lookup and event history.
+- **Phase 1 demo agent** — declarative YAML definition plus a smoke-test script.
 
-Describes an agent and its ordered workflow steps.
+## API
 
-### WorkflowStep
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/health` | Service health |
+| GET | `/tools` | Discover registered tools |
+| GET | `/agents` | List agents |
+| POST | `/agents` | Register an agent definition |
+| GET | `/agents/{agent_id}` | Fetch an agent |
+| POST | `/agents/{agent_id}/run` | Execute an agent |
+| GET | `/runs/{run_id}` | Fetch a run |
+| GET | `/runs/{run_id}/events` | Fetch execution history |
 
-References a registered deterministic tool and optional static inputs.
+## Retry behaviour
 
-### ToolRegistry
+Retries are configured per workflow step. `max_attempts=1` means no retry. For failures marked retryable, the runtime retries until the attempt limit and optionally applies linear backoff between attempts. Financial operations should keep retries idempotent; the runtime never assumes a business operation is safe to repeat merely because it failed.
 
-Provides the controlled execution boundary between agents and application capabilities. Unknown tools fail explicitly.
+## Planner boundary
 
-### AgentRuntime
+The current `StaticPlanner` returns the agent's declared steps. A future `LLMPlanner` may interpret natural-language requests and select a workflow, but its output must remain a validated list of registered `WorkflowStep` objects. The LLM never receives an unrestricted code-execution capability.
 
-Creates a run, maintains execution context, emits lifecycle events, executes steps, captures failures and returns structured output.
+## Persistence boundary
 
-### AgentRun
+Phase 1 uses `InMemoryAgentStore` so API and runtime contracts can be tested without prematurely coupling the engine to PostgreSQL. Phase 2 will introduce durable models, provenance and migrations behind the same logical boundary.
 
-Contains the run identifier, request, status, context, output and errors.
+## Testing
 
-## Design rules
+Coverage includes:
 
-1. Agents execute declared tools; they do not execute arbitrary generated Python.
-2. Tool failures are captured as structured runtime failures.
-3. Required workflow steps fail the run when unsuccessful.
-4. Optional steps can fail without aborting the entire workflow.
-5. Runtime state is structured so persistence can be introduced in a later phase.
-6. LLM planning will be added above the runtime; deterministic tools remain below it.
+- successful workflow execution;
+- unknown required tools;
+- retry of transient tool failures;
+- event history;
+- tool discovery;
+- API agent creation and execution.
 
-## Current implementation
+Run from `backend/`:
 
-Phase 1 starts with a synchronous in-process runtime. This is deliberate. Persistence, asynchronous execution, retries, distributed workers and streaming can be added once the workflow contract is stable.
+```bash
+pytest -q
+python scripts/phase1_smoke.py
+```
 
-## Next extensions
+## Deliberate non-goals
 
-- planner interface;
-- persistent run store;
-- retry policy and backoff;
-- timeout/cancellation;
-- tool metadata and JSON schemas;
-- validation hooks;
-- event persistence;
-- LLM-backed plan generation;
-- human approval checkpoints.
+- no arbitrary Python execution;
+- no distributed worker queue;
+- no Kafka;
+- no LLM provider dependency yet;
+- no PostgreSQL persistence yet;
+- no financial calculations in the runtime itself.
+
+Those concerns belong in later phases or deterministic domain tools.
