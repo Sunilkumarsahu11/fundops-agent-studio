@@ -2,7 +2,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from time import sleep
 
-from .models import AgentDefinition, AgentRequest, AgentRun, AgentStatus, ExecutionEvent, ValidationResult
+from .models import AgentDefinition, AgentRequest, AgentRun, AgentStatus, ExecutionEvent, ToolResult, ValidationResult
 from .planner import Planner, StaticPlanner
 from .registry import ToolRegistry
 
@@ -21,15 +21,16 @@ class AgentRuntime:
     def events(self, run_id: str) -> list[ExecutionEvent]:
         return list(self._events.get(run_id, []))
 
-    def _execute_with_timeout(self, tool: str, inputs: dict, timeout_seconds: float):
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(self.registry.execute, tool, inputs)
-            try:
-                return future.result(timeout=timeout_seconds)
-            except FutureTimeoutError:
-                future.cancel()
-                from .models import ToolResult
-                return ToolResult(success=False, error=f"Tool '{tool}' timed out after {timeout_seconds}s")
+    def _execute_with_timeout(self, tool: str, inputs: dict, timeout_seconds: float) -> ToolResult:
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(self.registry.execute, tool, inputs)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except FutureTimeoutError:
+            future.cancel()
+            return ToolResult(success=False, error=f"Tool '{tool}' timed out after {timeout_seconds}s")
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     def run(self, agent: AgentDefinition, request: AgentRequest, on_event: Callable[[ExecutionEvent], None] | None = None) -> AgentRun:
         run = AgentRun(agent_id=agent.id, request=request)
