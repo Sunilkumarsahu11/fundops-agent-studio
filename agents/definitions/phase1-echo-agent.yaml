@@ -1,0 +1,11 @@
+id: phase1-echo-agent
+name: Phase 1 Echo Agent
+description: Smoke-test agent proving the declarative workflow runtime.
+steps:
+  - id: echo-input
+    tool: echo
+    required: true
+    retry_policy:
+      max_attempts: 2
+      backoff_seconds: 0
+      retryable: true
