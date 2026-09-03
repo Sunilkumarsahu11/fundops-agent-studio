@@ -9,6 +9,7 @@ from app.agent_runtime.runtime import AgentRuntime
 from app.agent_runtime.store import InMemoryAgentStore
 from app.api.fund_model_router import router as fund_model_router
 from app.api.ingestion_router import router as ingestion_router
+from app.api.reconciliation_router import router as reconciliation_router
 
 router = APIRouter()
 store = InMemoryAgentStore()
@@ -17,6 +18,7 @@ register_builtins(registry)
 runtime = AgentRuntime(registry)
 router.include_router(fund_model_router)
 router.include_router(ingestion_router)
+router.include_router(reconciliation_router)
 
 
 @router.get("/health", tags=["system"])
