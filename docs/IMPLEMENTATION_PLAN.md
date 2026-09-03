@@ -49,8 +49,23 @@ Implemented as metadata rather than hard-coded entity classes:
 
 Key rule: **active model versions are never edited in place**. Changes create a new version and require review before activation.
 
-## Phase 3 — Data Ingestion & Schema Mapping
-Excel/JSON readers, table/header detection, type inference, normalization, schema mapping, entity matching and lineage.
+## Phase 3 — Data Ingestion & Schema Mapping — COMPLETE
+Implemented:
+- Excel workbook ingestion using OpenPyXL;
+- JSON object/array ingestion and nested-table discovery;
+- sheet/table/header detection;
+- duplicate/blank source-column handling;
+- deterministic source type inference;
+- schema mapping candidates with confidence and reasons;
+- explicit unmapped-field reporting;
+- deterministic string/number/money/boolean/date/datetime normalization;
+- canonical record creation;
+- workbook cell / JSON path provenance;
+- tenant and ingestion-run propagation;
+- FastAPI inspection and ingestion endpoints;
+- automated ingestion tests.
+
+Key rule: **the ingestion layer never silently discards an unmapped source field or fabricates a value.**
 
 ## Phase 4 — Deterministic Reconciliation Engine
 Exact/fuzzy matching, amount/date/currency checks, tolerances, missing/duplicate detection, sign and aggregation checks, reason codes and evidence.
