@@ -2,15 +2,12 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
-from app.agent_runtime.builtins import register_builtins
-from app.agent_runtime.models import AgentDefinition, ToolDefinition
-from app.agent_runtime.registry import ToolRegistry
+from app.agent_runtime.container import registry
+from app.agent_runtime.models import AgentDefinition
 from app.agent_factory.factory import AgentFactory
 from app.agent_factory.models import AgentBlueprint, FactoryRequest, FactoryValidation, PublishRequest, PublishResult
 
 router = APIRouter(prefix="/agent-factory", tags=["agent-factory"])
-registry = ToolRegistry()
-register_builtins(registry)
 factory = AgentFactory(registry)
 
 TEMPLATES = [
@@ -18,17 +15,21 @@ TEMPLATES = [
     {"id": "source-inspection", "name": "Source Inspection", "request": "Inspect a fund operations workbook before importing it"},
 ]
 
+
 @router.get("/templates")
 def templates() -> list[dict[str, str]]:
     return TEMPLATES
+
 
 @router.post("/draft", response_model=AgentBlueprint)
 def draft(request: FactoryRequest) -> AgentBlueprint:
     return factory.draft(request)
 
+
 @router.post("/validate", response_model=FactoryValidation)
 def validate(blueprint: AgentBlueprint) -> FactoryValidation:
     return factory.validate(blueprint)
+
 
 @router.post("/publish/{blueprint_id}", response_model=PublishResult)
 def publish(blueprint_id: UUID, request: PublishRequest) -> PublishResult:
