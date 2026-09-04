@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from .default_model import build_default_model
+from .default_model import default_fund_model
 from .diff import diff_models
 from .json_schema import model_to_json_schema
 from .overlay import apply_overlay
@@ -13,7 +13,7 @@ class FundModelService:
         self.store = store
 
     def bootstrap_default(self) -> FundModelDefinition:
-        model = build_default_model()
+        model = default_fund_model()
         if self.store.get(model.id, model.version) is None:
             self.store.save(model)
         return model
