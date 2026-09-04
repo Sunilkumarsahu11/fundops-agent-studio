@@ -3,11 +3,12 @@ from typing import Any
 from .models import ToolDefinition
 from .tool_layer import (
     approve_tool, build_exception_report_tool, calculate_variance_tool,
-    capture_audit_event_tool, collect_evidence_tool, create_run_snapshot_tool,
-    evaluate_materiality_tool, get_record_evidence_tool, ingest_source_tool,
-    inspect_source_tool, map_source_to_model_tool, normalize_records_tool,
-    query_records_tool, reconcile_records_tool, reject_tool, request_approval_tool,
-    validate_records_tool,
+    capture_audit_event_tool, capital_call_review_tool, collect_evidence_tool,
+    create_run_snapshot_tool, evaluate_materiality_tool, get_record_evidence_tool,
+    ingest_source_tool, inspect_source_tool, investor_reporting_tool,
+    map_source_to_model_tool, nav_review_tool, normalize_records_tool,
+    portfolio_exposure_tool, query_records_tool, reconcile_records_tool, reject_tool,
+    request_approval_tool, validate_records_tool, valuation_review_tool,
 )
 
 
@@ -33,6 +34,11 @@ def register_builtins(registry: Any) -> None:
         (_definition("calculate_variance", "Calculate absolute and percentage variance between two numeric values."), calculate_variance_tool),
         (_definition("evaluate_materiality", "Classify a variance against a deterministic materiality threshold."), evaluate_materiality_tool),
         (_definition("build_exception_report", "Build an evidence-backed exception report from a reconciliation result."), build_exception_report_tool),
+        (_definition("capital_call_review", "Review capital calls for required fields, duplicate keys and positive amounts."), capital_call_review_tool),
+        (_definition("nav_review", "Review NAV records for missing, negative and threshold-exceeding NAV movements."), nav_review_tool),
+        (_definition("valuation_review", "Review valuation records for amount, currency and valuation-date controls."), valuation_review_tool),
+        (_definition("portfolio_exposure", "Aggregate investment exposure by a configured portfolio dimension with percentages."), portfolio_exposure_tool),
+        (_definition("investor_reporting", "Build deterministic investor-level reporting totals with uncalled commitment and evidence."), investor_reporting_tool),
         (_definition("collect_evidence", "Collect provenance evidence from supplied canonical records."), collect_evidence_tool),
         (_definition("create_run_snapshot", "Create a governance snapshot for an agent run."), create_run_snapshot_tool),
         (_definition("capture_audit_event", "Record a governed audit event for an agent run."), capture_audit_event_tool),
