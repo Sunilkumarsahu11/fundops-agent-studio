@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     llm_provider: str = "openai"
     llm_model: str = ""
     llm_api_key: str = ""
+    llm_max_input_chars: int = 12000
+    llm_max_output_tokens: int = 1200
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
