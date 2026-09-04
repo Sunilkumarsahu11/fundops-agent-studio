@@ -59,7 +59,7 @@ class LLMPlanner:
         self.reasoning_effort = os.getenv("LLM_REASONING_EFFORT", "none")
         self.max_input_chars = int(os.getenv("LLM_MAX_INPUT_CHARS", "12000"))
         self.max_output_tokens = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "1200"))
-        self.max_steps = int(os.getenv("LLM_MAX_PLAN_STEPS", "6"))
+        self.max_steps = int(os.getenv("LLM_MAX_PLAN_STEPS", "10"))
         self.max_tools = int(os.getenv("LLM_MAX_PLAN_TOOLS", "6"))
         self.result_chars = int(os.getenv("LLM_MAX_RESULT_CHARS", "12000"))
         self._cache: dict[str, AgentBlueprint | str] = {}
