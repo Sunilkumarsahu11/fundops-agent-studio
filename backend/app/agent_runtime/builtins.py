@@ -1,6 +1,7 @@
 from typing import Any
 
 from .models import ToolDefinition
+from .review_tools import excel_quality_tool, exception_investigation_tool, normalization_review_tool
 from .tool_layer import (
     approve_tool, build_exception_report_tool, calculate_variance_tool,
     capture_audit_event_tool, capital_call_review_tool, collect_evidence_tool,
@@ -39,6 +40,9 @@ def register_builtins(registry: Any) -> None:
         (_definition("valuation_review", "Review valuation records for amount, currency and valuation-date controls."), valuation_review_tool),
         (_definition("portfolio_exposure", "Aggregate investment exposure by a configured portfolio dimension with percentages."), portfolio_exposure_tool),
         (_definition("investor_reporting", "Build deterministic investor-level reporting totals with uncalled commitment and evidence."), investor_reporting_tool),
+        (_definition("excel_quality", "Inspect an Excel workbook for structural, header, row and blank-column quality risks."), excel_quality_tool),
+        (_definition("normalization_review", "Normalize mapped canonical records and report deterministic normalization warnings."), normalization_review_tool),
+        (_definition("exception_investigation", "Prioritize deterministic exceptions by severity without changing their outcomes."), exception_investigation_tool),
         (_definition("collect_evidence", "Collect provenance evidence from supplied canonical records."), collect_evidence_tool),
         (_definition("create_run_snapshot", "Create a governance snapshot for an agent run."), create_run_snapshot_tool),
         (_definition("capture_audit_event", "Record a governed audit event for an agent run."), capture_audit_event_tool),
