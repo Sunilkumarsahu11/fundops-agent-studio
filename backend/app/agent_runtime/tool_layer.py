@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
+from collections import defaultdict
 from typing import Any
 from uuid import UUID
 
@@ -31,6 +32,19 @@ def _content(inputs: dict[str, Any]) -> tuple[str, bytes, SourceFormat]:
     raw_format = inputs.get("source_format")
     fmt = SourceFormat(raw_format) if raw_format else SourceFormat.EXCEL if file_name.lower().endswith((".xlsx", ".xlsm", ".xltx", ".xltm")) else SourceFormat.JSON
     return file_name, content, fmt
+
+
+def _records(inputs: dict[str, Any]) -> list[CanonicalRecord]:
+    return [CanonicalRecord.model_validate(r) for r in inputs.get("records", [])]
+
+
+def _number(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def inspect_source_tool(inputs: dict[str, Any]) -> dict[str, Any]:
@@ -67,7 +81,7 @@ def normalize_records_tool(inputs: dict[str, Any]) -> dict[str, Any]:
     model = FundModelStore(get_settings().database_url).get(model_id, int(version) if version is not None else None)
     if model is None:
         raise ValueError(f"Fund model not found: {model_id}")
-    records = [CanonicalRecord.model_validate(r) for r in inputs.get("records", [])]
+    records = _records(inputs)
     normalized: list[dict[str, Any]] = []
     warnings: list[str] = []
     for record in records:
@@ -115,7 +129,7 @@ def validate_records_tool(inputs: dict[str, Any]) -> dict[str, Any]:
 
 
 def query_records_tool(inputs: dict[str, Any]) -> dict[str, Any]:
-    records = [CanonicalRecord.model_validate(r) for r in inputs.get("records", [])]
+    records = _records(inputs)
     entity = inputs.get("entity")
     filters = inputs.get("filters", {})
     matches = []
@@ -129,8 +143,7 @@ def query_records_tool(inputs: dict[str, Any]) -> dict[str, Any]:
 
 def get_record_evidence_tool(inputs: dict[str, Any]) -> dict[str, Any]:
     target = str(inputs["record_id"])
-    for raw in inputs.get("records", []):
-        record = CanonicalRecord.model_validate(raw)
+    for record in _records(inputs):
         if str(record.record_id) == target:
             return {"record_id": target, "evidence": record.source_evidence()}
     return {"record_id": target, "evidence": []}
@@ -168,8 +181,128 @@ def build_exception_report_tool(inputs: dict[str, Any]) -> dict[str, Any]:
 
 
 def collect_evidence_tool(inputs: dict[str, Any]) -> dict[str, Any]:
-    records = [CanonicalRecord.model_validate(r) for r in inputs.get("records", [])]
+    records = _records(inputs)
     return {"evidence": [{"record_id": str(r.record_id), "entity": r.entity, "provenance": r.source_evidence()} for r in records]}
+
+
+def capital_call_review_tool(inputs: dict[str, Any]) -> dict[str, Any]:
+    records = _records(inputs)
+    required = inputs.get("required_fields", ["fund_id", "call_id", "amount"])
+    amount_field = str(inputs.get("amount_field", "amount"))
+    id_fields = inputs.get("id_fields", ["fund_id", "call_id"])
+    exceptions: list[dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for record in records:
+        data = record.data
+        missing = [f for f in required if data.get(f) in (None, "")]
+        amount = _number(data.get(amount_field))
+        key = tuple(data.get(f) for f in id_fields)
+        if key in seen:
+            exceptions.append({"record_id": str(record.record_id), "code": "DUPLICATE_CAPITAL_CALL", "message": f"Duplicate capital call key: {key}", "evidence": record.source_evidence()})
+        seen.add(key)
+        if missing:
+            exceptions.append({"record_id": str(record.record_id), "code": "MISSING_REQUIRED_FIELD", "message": f"Missing required fields: {missing}", "evidence": record.source_evidence()})
+        if amount is not None and amount <= 0:
+            exceptions.append({"record_id": str(record.record_id), "code": "INVALID_CALL_AMOUNT", "message": "Capital call amount must be positive", "evidence": record.source_evidence()})
+    return {"status": "exceptions" if exceptions else "passed", "record_count": len(records), "exception_count": len(exceptions), "exceptions": exceptions, "total_call_amount": sum(_number(r.data.get(amount_field)) or 0 for r in records)}
+
+
+def nav_review_tool(inputs: dict[str, Any]) -> dict[str, Any]:
+    records = _records(inputs)
+    nav_field = str(inputs.get("nav_field", "nav"))
+    fund_field = str(inputs.get("fund_field", "fund_id"))
+    prior_field = inputs.get("prior_nav_field", "prior_nav")
+    threshold = float(inputs.get("variance_percent_threshold", 0.0))
+    exceptions: list[dict[str, Any]] = []
+    for record in records:
+        nav = _number(record.data.get(nav_field))
+        if nav is None:
+            exceptions.append({"record_id": str(record.record_id), "code": "MISSING_NAV", "message": f"Missing or non-numeric {nav_field}", "evidence": record.source_evidence()})
+            continue
+        if nav < 0:
+            exceptions.append({"record_id": str(record.record_id), "code": "NEGATIVE_NAV", "message": "NAV cannot be negative", "evidence": record.source_evidence()})
+        prior = _number(record.data.get(prior_field)) if prior_field else None
+        if prior is not None and prior != 0:
+            pct = abs(nav - prior) / abs(prior) * 100
+            if pct >= threshold > 0:
+                exceptions.append({"record_id": str(record.record_id), "code": "NAV_VARIANCE", "message": f"NAV changed by {pct:.2f}%", "variance_percent": pct, "evidence": record.source_evidence()})
+    totals: dict[str, float] = defaultdict(float)
+    for r in records:
+        value = _number(r.data.get(nav_field))
+        if value is not None:
+            totals[str(r.data.get(fund_field, "unknown"))] += value
+    return {"status": "exceptions" if exceptions else "passed", "record_count": len(records), "exception_count": len(exceptions), "exceptions": exceptions, "nav_by_fund": dict(totals)}
+
+
+def valuation_review_tool(inputs: dict[str, Any]) -> dict[str, Any]:
+    records = _records(inputs)
+    amount_field = str(inputs.get("amount_field", "fair_value"))
+    currency_field = str(inputs.get("currency_field", "currency"))
+    date_field = str(inputs.get("date_field", "valuation_date"))
+    allowed_currencies = {str(x).upper() for x in inputs.get("allowed_currencies", [])}
+    exceptions: list[dict[str, Any]] = []
+    for record in records:
+        data = record.data
+        amount = _number(data.get(amount_field))
+        if amount is None:
+            exceptions.append({"record_id": str(record.record_id), "code": "MISSING_VALUATION", "message": f"Missing or non-numeric {amount_field}", "evidence": record.source_evidence()})
+        elif amount < 0 and not inputs.get("allow_negative", False):
+            exceptions.append({"record_id": str(record.record_id), "code": "NEGATIVE_VALUATION", "message": "Valuation cannot be negative", "evidence": record.source_evidence()})
+        currency = data.get(currency_field)
+        if not currency:
+            exceptions.append({"record_id": str(record.record_id), "code": "MISSING_CURRENCY", "message": "Valuation currency is required", "evidence": record.source_evidence()})
+        elif allowed_currencies and str(currency).upper() not in allowed_currencies:
+            exceptions.append({"record_id": str(record.record_id), "code": "UNSUPPORTED_CURRENCY", "message": f"Currency {currency} is not allowed", "evidence": record.source_evidence()})
+        if not data.get(date_field):
+            exceptions.append({"record_id": str(record.record_id), "code": "MISSING_VALUATION_DATE", "message": "Valuation date is required", "evidence": record.source_evidence()})
+    return {"status": "exceptions" if exceptions else "passed", "record_count": len(records), "exception_count": len(exceptions), "exceptions": exceptions}
+
+
+def portfolio_exposure_tool(inputs: dict[str, Any]) -> dict[str, Any]:
+    records = _records(inputs)
+    amount_field = str(inputs.get("amount_field", "fair_value"))
+    group_field = str(inputs.get("group_field", "sector"))
+    currency_field = str(inputs.get("currency_field", "currency"))
+    groups: dict[str, float] = defaultdict(float)
+    currencies: set[str] = set()
+    for record in records:
+        amount = _number(record.data.get(amount_field))
+        if amount is None:
+            continue
+        groups[str(record.data.get(group_field, "Unclassified"))] += amount
+        if record.data.get(currency_field):
+            currencies.add(str(record.data[currency_field]).upper())
+    total = sum(groups.values())
+    exposure = [{"group": group, "amount": amount, "percentage": amount / total * 100 if total else 0.0} for group, amount in sorted(groups.items(), key=lambda x: abs(x[1]), reverse=True)]
+    return {"record_count": len(records), "total_exposure": total, "currencies": sorted(currencies), "group_field": group_field, "exposure": exposure}
+
+
+def investor_reporting_tool(inputs: dict[str, Any]) -> dict[str, Any]:
+    records = _records(inputs)
+    investor_field = str(inputs.get("investor_field", "investor_id"))
+    metric_fields = inputs.get("metric_fields", ["commitment", "capital_called", "distribution", "nav"])
+    report: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    evidence: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        investor = str(record.data.get(investor_field, "Unassigned"))
+        for field in metric_fields:
+            value = _number(record.data.get(field))
+            if value is not None:
+                report[investor][field] += value
+        evidence[investor].append({"record_id": str(record.record_id), "provenance": record.source_evidence()})
+    rows = []
+    for investor, metrics in sorted(report.items()):
+        row = {"investor": investor, **dict(metrics), "evidence_count": len(evidence[investor])}
+        commitment = metrics.get("commitment", 0.0)
+        called = metrics.get("capital_called", 0.0)
+        row["uncalled_commitment"] = commitment - called
+        rows.append(row)
+    return {"investor_count": len(rows), "record_count": len(records), "rows": rows, "evidence": dict(evidence)}
+
+
+def build_exception_report_tool(inputs: dict[str, Any]) -> dict[str, Any]:
+    from app.reconciliation.models import ReconciliationResult
+    return build_exception_report(ReconciliationResult.model_validate(inputs["reconciliation_result"]))
 
 
 def create_run_snapshot_tool(inputs: dict[str, Any]) -> dict[str, Any]:
