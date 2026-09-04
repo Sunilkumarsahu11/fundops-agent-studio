@@ -33,17 +33,83 @@ class FundOperationsLibrary:
 
     @staticmethod
     def _catalog() -> list[FundAgentSpec]:
+        """Return the declarative agent catalogue.
+
+        FundAgentSpec is a Pydantic model, so all fields are passed by name.
+        Keeping the catalogue declarative also makes it safe for the Agent
+        Factory to inspect and select from the same allow-listed agents.
+        """
         return [
-            FundAgentSpec("fund-reconciliation", "Fund Reconciliation Agent", AgentKind.RECONCILIATION, "Compare two canonical fund datasets and produce evidence-backed exceptions.", capabilities=["composite-key-match", "tolerance", "materiality", "evidence"]),
-            FundAgentSpec("excel-quality", "Excel Quality Agent", AgentKind.EXCEL_QUALITY, "Identify source workbook quality risks before ingestion.", capabilities=["structure-check", "header-check", "type-risk"]),
-            FundAgentSpec("capital-call-review", "Capital Call Review Agent", AgentKind.CAPITAL_CALL, "Review capital-call records for deterministic completeness and consistency.", capabilities=["required-field-check", "duplicate-check", "amount-check"]),
-            FundAgentSpec("nav-review", "NAV Review Agent", AgentKind.NAV_REVIEW, "Review NAV records and surface deterministic data-quality and movement exceptions.", capabilities=["completeness", "negative-check", "variance-review"]),
-            FundAgentSpec("valuation-review", "Valuation Review Agent", AgentKind.VALUATION_REVIEW, "Review valuation records for amount, currency, date and evidence controls.", capabilities=["currency-check", "date-check", "amount-check"]),
-            FundAgentSpec("normalization", "Fund Data Normalization Agent", AgentKind.NORMALIZATION, "Normalize mapped source data into the canonical fund model.", capabilities=["type-normalization", "provenance"]),
-            FundAgentSpec("portfolio-exposure", "Portfolio Exposure Agent", AgentKind.PORTFOLIO_EXPOSURE, "Prepare portfolio exposure views from canonical investment records.", capabilities=["aggregation", "grouping", "percentage"]),
-            FundAgentSpec("investor-reporting", "Investor Reporting Agent", AgentKind.INVESTOR_REPORTING, "Prepare governed investor-reporting datasets from canonical records.", capabilities=["aggregation", "uncalled-commitment", "evidence"]),
-            FundAgentSpec("exception-investigation", "Exception Investigation Agent", AgentKind.EXCEPTION_INVESTIGATION, "Prioritize and explain existing deterministic exceptions without changing their outcomes.", capabilities=["reason-code", "evidence"]),
-            FundAgentSpec("fund-data-qa", "Fund Data Q&A Agent", AgentKind.FUND_DATA_QA, "Answer questions over supplied canonical fund records without fabricating missing data.", capabilities=["record-lookup", "evidence"]),
+            FundAgentSpec(
+                id="fund-reconciliation",
+                name="Fund Reconciliation Agent",
+                kind=AgentKind.RECONCILIATION,
+                description="Compare two canonical fund datasets and produce evidence-backed exceptions.",
+                capabilities=["composite-key-match", "tolerance", "materiality", "evidence"],
+            ),
+            FundAgentSpec(
+                id="excel-quality",
+                name="Excel Quality Agent",
+                kind=AgentKind.EXCEL_QUALITY,
+                description="Identify source workbook quality risks before ingestion.",
+                capabilities=["structure-check", "header-check", "type-risk"],
+            ),
+            FundAgentSpec(
+                id="capital-call-review",
+                name="Capital Call Review Agent",
+                kind=AgentKind.CAPITAL_CALL,
+                description="Review capital-call records for deterministic completeness and consistency.",
+                capabilities=["required-field-check", "duplicate-check", "amount-check"],
+            ),
+            FundAgentSpec(
+                id="nav-review",
+                name="NAV Review Agent",
+                kind=AgentKind.NAV_REVIEW,
+                description="Review NAV records and surface deterministic data-quality and movement exceptions.",
+                capabilities=["completeness", "negative-check", "variance-review"],
+            ),
+            FundAgentSpec(
+                id="valuation-review",
+                name="Valuation Review Agent",
+                kind=AgentKind.VALUATION_REVIEW,
+                description="Review valuation records for amount, currency, date and evidence controls.",
+                capabilities=["currency-check", "date-check", "amount-check"],
+            ),
+            FundAgentSpec(
+                id="normalization",
+                name="Fund Data Normalization Agent",
+                kind=AgentKind.NORMALIZATION,
+                description="Normalize mapped source data into the canonical fund model.",
+                capabilities=["type-normalization", "provenance"],
+            ),
+            FundAgentSpec(
+                id="portfolio-exposure",
+                name="Portfolio Exposure Agent",
+                kind=AgentKind.PORTFOLIO_EXPOSURE,
+                description="Prepare portfolio exposure views from canonical investment records.",
+                capabilities=["aggregation", "grouping", "percentage"],
+            ),
+            FundAgentSpec(
+                id="investor-reporting",
+                name="Investor Reporting Agent",
+                kind=AgentKind.INVESTOR_REPORTING,
+                description="Prepare governed investor-reporting datasets from canonical records.",
+                capabilities=["aggregation", "uncalled-commitment", "evidence"],
+            ),
+            FundAgentSpec(
+                id="exception-investigation",
+                name="Exception Investigation Agent",
+                kind=AgentKind.EXCEPTION_INVESTIGATION,
+                description="Prioritize and explain existing deterministic exceptions without changing their outcomes.",
+                capabilities=["reason-code", "evidence"],
+            ),
+            FundAgentSpec(
+                id="fund-data-qa",
+                name="Fund Data Q&A Agent",
+                kind=AgentKind.FUND_DATA_QA,
+                description="Answer questions over supplied canonical fund records without fabricating missing data.",
+                capabilities=["record-lookup", "evidence"],
+            ),
         ]
 
     def list(self) -> list[FundAgentSpec]:
