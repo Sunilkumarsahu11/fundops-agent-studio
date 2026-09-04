@@ -9,6 +9,8 @@ def test_builtin_tool_layer_is_registered():
         "inspect_source", "ingest_source", "map_source_to_model", "normalize_records",
         "validate_records", "query_records", "get_record_evidence", "reconcile_records",
         "calculate_variance", "evaluate_materiality", "build_exception_report",
+        "capital_call_review", "nav_review", "valuation_review", "portfolio_exposure",
+        "investor_reporting", "excel_quality", "normalization_review", "exception_investigation",
         "collect_evidence", "create_run_snapshot", "capture_audit_event",
         "request_approval", "approve", "reject",
     ]).issubset(set(registry.names()))
