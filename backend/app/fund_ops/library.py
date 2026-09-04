@@ -20,9 +20,11 @@ class FundOperationsLibrary:
         self._agents = {spec.id: spec for spec in self._catalog()}
         self._handlers: dict[str, Callable[[AgentInput], AgentOutput]] = {
             "fund-reconciliation": self._reconcile,
+            "excel-quality": self._excel_quality,
             "capital-call-review": self._capital_call_review,
             "nav-review": self._nav_review,
             "valuation-review": self._valuation_review,
+            "normalization": self._normalization,
             "portfolio-exposure": self._portfolio_exposure,
             "investor-reporting": self._investor_reporting,
             "exception-investigation": self._investigate,
@@ -92,6 +94,9 @@ class FundOperationsLibrary:
         except (KeyError, TypeError, ValueError) as exc:
             return AgentOutput(agent_id="fund-reconciliation", status="invalid_input", warnings=[str(exc)])
 
+    def _excel_quality(self, request: AgentInput) -> AgentOutput:
+        return self._run_domain_tool("excel-quality", "excel_quality", request)
+
     def _capital_call_review(self, request: AgentInput) -> AgentOutput:
         return self._run_domain_tool("capital-call-review", "capital_call_review", request)
 
@@ -101,6 +106,9 @@ class FundOperationsLibrary:
     def _valuation_review(self, request: AgentInput) -> AgentOutput:
         return self._run_domain_tool("valuation-review", "valuation_review", request)
 
+    def _normalization(self, request: AgentInput) -> AgentOutput:
+        return self._run_domain_tool("normalization", "normalization_review", request)
+
     def _portfolio_exposure(self, request: AgentInput) -> AgentOutput:
         return self._run_domain_tool("portfolio-exposure", "portfolio_exposure", request)
 
@@ -108,9 +116,7 @@ class FundOperationsLibrary:
         return self._run_domain_tool("investor-reporting", "investor_reporting", request)
 
     def _investigate(self, request: AgentInput) -> AgentOutput:
-        exceptions = request.parameters.get("exceptions", [])
-        evidence = [item.get("evidence", {}) for item in exceptions if isinstance(item, dict)]
-        return AgentOutput(agent_id="exception-investigation", status="completed", result={"exception_count": len(exceptions), "exceptions": exceptions, "evidence": evidence})
+        return self._run_domain_tool("exception-investigation", "exception_investigation", request)
 
     def _qa(self, request: AgentInput) -> AgentOutput:
         question = str(request.parameters.get("question", "")).strip()
