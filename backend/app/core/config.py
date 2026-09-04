@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_max_input_chars: int = 12000
     llm_max_output_tokens: int = 1200
+    llm_max_plan_steps: int = 6
+    llm_max_plan_tools: int = 6
+    llm_max_result_chars: int = 12000
 
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False, extra="ignore")
 
