@@ -32,7 +32,13 @@ def templates() -> list[dict[str, str]]:
 
 @router.get("/llm/status")
 def llm_status() -> dict[str, Any]:
-    return {"configured": llm_planner.configured, "model": llm_planner.model or None, "planner": "langchain-llm"}
+    return {"planner": "langchain-openai", **llm_planner.metrics()}
+
+
+@router.get("/llm/metrics")
+def llm_metrics() -> dict[str, Any]:
+    """Operational LLM metrics; no prompts, keys, or user data are returned."""
+    return llm_planner.metrics()
 
 
 @router.post("/draft", response_model=AgentBlueprint)
@@ -44,8 +50,6 @@ def draft(request: FactoryRequest) -> AgentBlueprint:
 def draft_llm(request: FactoryRequest) -> AgentBlueprint:
     try:
         blueprint = llm_planner.plan(request)
-        # Keep the LLM-generated blueprint in the same governed store so the existing
-        # validate -> human approval -> publish lifecycle applies unchanged.
         factory.blueprints[str(blueprint.id)] = blueprint
         return blueprint
     except LLMUnavailableError as exc:
