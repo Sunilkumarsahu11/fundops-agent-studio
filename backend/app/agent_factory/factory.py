@@ -29,6 +29,16 @@ class AgentFactory:
                 self._add(selections, steps, "build_exception_report", "Produces the evidence-backed exception report from reconciliation output.", input={"reconciliation_result": "$step_1"})
             if any(word in text for word in ("evidence", "audit", "govern")):
                 self._add(selections, steps, "collect_evidence", "Collects source provenance for supplied records.", input={"records": "$left_records"})
+        elif any(word in text for word in ("capital call", "capital calls", "capital-call")):
+            self._add(selections, steps, "capital_call_review", "Runs deterministic capital-call completeness, duplicate and amount controls.", input={"records": "$records"})
+        elif any(word in text for word in ("nav review", "nav check", "review nav", "net asset value")):
+            self._add(selections, steps, "nav_review", "Runs deterministic NAV completeness, sign and movement controls.", input={"records": "$records", "variance_percent_threshold": "$variance_percent_threshold"})
+        elif any(word in text for word in ("valuation review", "valuation check", "review valuation", "valuations")):
+            self._add(selections, steps, "valuation_review", "Runs deterministic valuation amount, currency and date controls.", input={"records": "$records", "allowed_currencies": "$allowed_currencies"})
+        elif any(word in text for word in ("portfolio exposure", "portfolio concentration", "exposure analysis", "investment exposure")):
+            self._add(selections, steps, "portfolio_exposure", "Aggregates canonical investment exposure by the requested portfolio dimension.", input={"records": "$records", "group_field": "$group_field", "amount_field": "$amount_field"})
+        elif any(word in text for word in ("investor reporting", "investor report", "investor statement", "investor reporting dataset")):
+            self._add(selections, steps, "investor_reporting", "Builds deterministic investor-level totals, uncalled commitments and evidence.", input={"records": "$records", "investor_field": "$investor_field", "metric_fields": "$metric_fields"})
         elif any(word in text for word in ("ingest", "import", "load", "workbook", "excel", "json")):
             self._add(selections, steps, "inspect_source", "Inspects source structure before ingestion.", input={"file_name": "$file_name", "content_base64": "$content_base64", "source_format": "$source_format"})
             if any(word in text for word in ("ingest", "import", "load")):
@@ -50,6 +60,7 @@ class AgentFactory:
         errors: list[str] = []
         warnings: list[str] = []
         seen: set[str] = set()
+        financial_tools = {"reconcile_records", "build_exception_report", "calculate_variance", "evaluate_materiality", "capital_call_review", "nav_review", "valuation_review"}
         for step in blueprint.steps:
             if step.id in seen:
                 errors.append(f"Duplicate step id: {step.id}")
@@ -57,7 +68,7 @@ class AgentFactory:
             if not self.registry.has(step.tool):
                 errors.append(f"Unknown tool: {step.tool}")
             definition = self.registry.get(step.tool)
-            if definition and definition.deterministic and step.tool in {"reconcile_records", "build_exception_report", "calculate_variance", "evaluate_materiality"} and not step.required:
+            if definition and definition.deterministic and step.tool in financial_tools and not step.required:
                 errors.append(f"Financial control step must be required: {step.id}")
         if not blueprint.steps:
             errors.append("Blueprint must contain at least one step")
