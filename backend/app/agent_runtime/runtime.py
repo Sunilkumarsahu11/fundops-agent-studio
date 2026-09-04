@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
 from time import sleep
+from typing import Any
 
 from .models import AgentDefinition, AgentRequest, AgentRun, AgentStatus, ExecutionEvent, ToolResult, ValidationResult
 from .planner import Planner, StaticPlanner
@@ -32,6 +33,16 @@ class AgentRuntime:
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
+    @staticmethod
+    def _resolve(value: Any, context: dict[str, Any]) -> Any:
+        if isinstance(value, str) and value.startswith("$") and value[1:] in context:
+            return context[value[1:]]
+        if isinstance(value, dict):
+            return {key: AgentRuntime._resolve(item, context) for key, item in value.items()}
+        if isinstance(value, list):
+            return [AgentRuntime._resolve(item, context) for item in value]
+        return value
+
     def run(self, agent: AgentDefinition, request: AgentRequest, on_event: Callable[[ExecutionEvent], None] | None = None) -> AgentRun:
         run = AgentRun(agent_id=agent.id, request=request)
         self._events[str(run.id)] = []
@@ -61,7 +72,8 @@ class AgentRuntime:
                 result = None
                 for attempt in range(1, policy.max_attempts + 1):
                     emit(AgentStatus.EXECUTING, f"Executing step {step.id}", step.id, attempt)
-                    result = self._execute_with_timeout(step.tool, {**run.context, **step.input}, step.timeout_seconds)
+                    inputs = {**run.context, **self._resolve(step.input, run.context)}
+                    result = self._execute_with_timeout(step.tool, inputs, step.timeout_seconds)
                     if result.success or not policy.retryable or attempt == policy.max_attempts:
                         break
                     if policy.backoff_seconds:
