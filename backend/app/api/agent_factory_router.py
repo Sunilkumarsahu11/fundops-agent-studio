@@ -43,7 +43,11 @@ def draft(request: FactoryRequest) -> AgentBlueprint:
 @router.post("/draft-llm", response_model=AgentBlueprint)
 def draft_llm(request: FactoryRequest) -> AgentBlueprint:
     try:
-        return llm_planner.plan(request)
+        blueprint = llm_planner.plan(request)
+        # Keep the LLM-generated blueprint in the same governed store so the existing
+        # validate -> human approval -> publish lifecycle applies unchanged.
+        factory.blueprints[str(blueprint.id)] = blueprint
+        return blueprint
     except LLMUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except ValueError as exc:
