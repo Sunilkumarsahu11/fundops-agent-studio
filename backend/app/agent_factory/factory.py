@@ -7,7 +7,7 @@ from .models import AgentBlueprint, BlueprintStatus, FactoryRequest, FactoryVali
 
 
 class AgentFactory:
-    """Builds declarative agents using only allow-listed registered tools."""
+    """Build declarative agents using only allow-listed registered tools."""
 
     def __init__(self, registry: ToolRegistry) -> None:
         self.registry = registry
@@ -19,24 +19,29 @@ class AgentFactory:
         steps: list[WorkflowStep] = []
 
         if any(word in text for word in ("reconcile", "reconciliation", "compare")):
-            self._add(selections, steps, "reconcile_records", "Deterministic record reconciliation.")
+            self._add(selections, steps, "reconcile_records", "Deterministic reconciliation of two supplied canonical datasets.", input={
+                "left_records": "$left_records", "right_records": "$right_records", "key_fields": "$key_fields",
+                "amount_field": "$amount_field", "date_field": "$date_field", "currency_field": "$currency_field",
+                "amount_tolerance": "$amount_tolerance", "amount_tolerance_percent": "$amount_tolerance_percent",
+                "date_tolerance_days": "$date_tolerance_days", "materiality_threshold": "$materiality_threshold",
+            })
             if any(word in text for word in ("exception", "exceptions", "flag", "report")):
-                self._add(selections, steps, "build_exception_report", "Produces the evidence-backed exception report.")
+                self._add(selections, steps, "build_exception_report", "Produces the evidence-backed exception report from reconciliation output.", input={"reconciliation_result": "$step_1"})
+            if any(word in text for word in ("evidence", "audit", "govern")):
+                self._add(selections, steps, "collect_evidence", "Collects source provenance for supplied records.", input={"records": "$left_records"})
         elif any(word in text for word in ("ingest", "import", "load", "workbook", "excel", "json")):
-            self._add(selections, steps, "inspect_source", "Inspects source structure before ingestion.")
+            self._add(selections, steps, "inspect_source", "Inspects source structure before ingestion.", input={"file_name": "$file_name", "content_base64": "$content_base64", "source_format": "$source_format"})
+            if any(word in text for word in ("ingest", "import", "load")):
+                self._add(selections, steps, "ingest_source", "Loads the inspected source into the canonical fund model.", input={"file_name": "$file_name", "content_base64": "$content_base64", "source_format": "$source_format", "model_id": "$model_id", "model_version": "$model_version"})
 
         if not steps:
             selections.append(ToolSelection(tool="echo", reason="Safe fallback for unsupported requests.", confidence=0.2))
             steps.append(WorkflowStep(id="step_1", tool="echo", input={"request": request.request}))
 
         blueprint = AgentBlueprint(
-            name=request.name or self._name(request.request),
-            description=f"Generated from: {request.request}",
-            source_request=request.request,
-            tools=selections,
-            steps=steps,
-            inputs=request.inputs,
-            metadata={"planner": "deterministic", "governance": "allow-listed-tools-only"},
+            name=request.name or self._name(request.request), description=f"Generated from: {request.request}",
+            source_request=request.request, tools=selections, steps=steps, inputs=request.inputs,
+            metadata={"planner": "deterministic", "governance": "allow-listed-tools-only", "context_references": "$step_n / $input_name"},
         )
         self.blueprints[str(blueprint.id)] = blueprint
         return blueprint
@@ -52,9 +57,8 @@ class AgentFactory:
             if not self.registry.has(step.tool):
                 errors.append(f"Unknown tool: {step.tool}")
             definition = self.registry.get(step.tool)
-            if definition and definition.deterministic and step.tool in {"reconcile_records", "build_exception_report"}:
-                if not step.required:
-                    errors.append(f"Financial control step must be required: {step.id}")
+            if definition and definition.deterministic and step.tool in {"reconcile_records", "build_exception_report", "calculate_variance", "evaluate_materiality"} and not step.required:
+                errors.append(f"Financial control step must be required: {step.id}")
         if not blueprint.steps:
             errors.append("Blueprint must contain at least one step")
         if any(selection.confidence < 0.8 for selection in blueprint.tools):
@@ -71,26 +75,17 @@ class AgentFactory:
         blueprint.metadata["approved_by"] = approved_by
         blueprint.metadata["approval_required"] = True
         self.blueprints[str(blueprint.id)] = blueprint
-        return AgentDefinition(
-            id=f"generated-{blueprint.id}",
-            name=blueprint.name,
-            description=blueprint.description,
-            steps=blueprint.steps,
-        )
+        return AgentDefinition(id=f"generated-{blueprint.id}", name=blueprint.name, description=blueprint.description, steps=blueprint.steps)
 
     def get(self, blueprint_id: str) -> AgentBlueprint | None:
         return self.blueprints.get(blueprint_id)
 
-    def _add(self, selections: list[ToolSelection], steps: list[WorkflowStep], tool: str, reason: str) -> None:
+    def _add(self, selections: list[ToolSelection], steps: list[WorkflowStep], tool: str, reason: str, input: dict[str, Any] | None = None) -> None:
         if not self.registry.has(tool):
             return
         selections.append(ToolSelection(tool=tool, reason=reason, confidence=0.95))
         definition: ToolDefinition | None = self.registry.get(tool)
-        steps.append(WorkflowStep(
-            id=f"step_{len(steps) + 1}", tool=tool, required=True,
-            timeout_seconds=definition.timeout_seconds if definition else 30,
-            retry_policy=definition.retry_policy if definition else RetryPolicy(),
-        ))
+        steps.append(WorkflowStep(id=f"step_{len(steps) + 1}", tool=tool, input=input or {}, required=True, timeout_seconds=definition.timeout_seconds if definition else 30, retry_policy=definition.retry_policy if definition else RetryPolicy()))
 
     @staticmethod
     def _name(request: str) -> str:
