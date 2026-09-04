@@ -2,11 +2,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, HTTPException
 
-from app.agent_runtime.builtins import register_builtins
+from app.agent_runtime.container import registry
 from app.agent_runtime.models import AgentDefinition, AgentRequest, AgentRun, ToolDefinition
-from app.agent_runtime.registry import ToolRegistry
 from app.agent_runtime.runtime import AgentRuntime
 from app.agent_runtime.store import InMemoryAgentStore
+from app.agent_factory.factory import AgentFactory
 from app.api.agent_factory_router import router as agent_factory_router
 from app.api.fund_model_router import router as fund_model_router
 from app.api.ingestion_router import router as ingestion_router
@@ -18,8 +18,6 @@ from app.api.governance_router import service as governance_service
 
 router = APIRouter()
 store = InMemoryAgentStore()
-registry = ToolRegistry()
-register_builtins(registry)
 runtime = AgentRuntime(registry)
 router.include_router(fund_model_router)
 router.include_router(ingestion_router)
