@@ -1,17 +1,23 @@
 from collections.abc import Callable
 from typing import Any
+from uuid import UUID, uuid4
 
+from app.agent_runtime.container import registry
+from app.agent_runtime.registry import ToolRegistry
 from app.reconciliation.agent import FundReconciliationAgent
-from app.reconciliation.models import ReconciliationRequest
-from app.reconciliation.report import build_exception_report
 
 from .models import AgentInput, AgentKind, AgentOutput, FundAgentSpec
 
 
 class FundOperationsLibrary:
-    """Catalog and safe execution facade for reusable FundOps agents."""
+    """Catalog and safe execution facade for reusable FundOps agents.
 
-    def __init__(self) -> None:
+    Domain agents compose the shared deterministic tool layer. They do not
+    duplicate financial-control implementations.
+    """
+
+    def __init__(self, tool_registry: ToolRegistry | None = None) -> None:
+        self.registry = tool_registry or registry
         self._agents = {spec.id: spec for spec in self._catalog()}
         self._handlers: dict[str, Callable[[AgentInput], AgentOutput]] = {
             "fund-reconciliation": self._reconcile,
@@ -46,34 +52,46 @@ class FundOperationsLibrary:
             return AgentOutput(agent_id=agent_id, status="not_implemented", warnings=["This library agent is catalogued but its domain workflow is not yet enabled."])
         return handler(request)
 
+    def _tool(self, name: str, inputs: dict[str, Any]) -> dict[str, Any]:
+        result = self.registry.execute(name, inputs)
+        if not result.success:
+            raise ValueError(result.error or f"Tool failed: {name}")
+        return result.output
+
     def _reconcile(self, request: AgentInput) -> AgentOutput:
         p = request.parameters
         try:
-            left = p.get("left_records", request.records)
+            left = p["left_records"]
             right = p["right_records"]
-            result = FundReconciliationAgent().run(
-                left, right,
-                key_fields=p["key_fields"],
-                amount_field=p.get("amount_field"),
-                date_field=p.get("date_field"),
-                currency_field=p.get("currency_field"),
-                amount_tolerance=p.get("amount_tolerance", 0.0),
-                amount_tolerance_percent=p.get("amount_tolerance_percent", 0.0),
-                date_tolerance_days=p.get("date_tolerance_days", 0),
-                materiality_threshold=p.get("materiality_threshold", 0.0),
-            )
-            reconciliation, report = result
-            return AgentOutput(agent_id="fund-reconciliation", status=reconciliation.status, result=report)
+            reconciliation = self._tool("reconcile_records", {
+                "left_records": left,
+                "right_records": right,
+                "key_fields": p["key_fields"],
+                "amount_field": p.get("amount_field"),
+                "date_field": p.get("date_field"),
+                "currency_field": p.get("currency_field"),
+                "amount_tolerance": p.get("amount_tolerance", 0.0),
+                "amount_tolerance_percent": p.get("amount_tolerance_percent", 0.0),
+                "date_tolerance_days": p.get("date_tolerance_days", 0),
+                "materiality_threshold": p.get("materiality_threshold", 0.0),
+            })
+            report = self._tool("build_exception_report", {"reconciliation_result": reconciliation})
+            run_id = str(uuid4())
+            self._tool("create_run_snapshot", {"run_id": run_id, "agent_id": "fund-reconciliation", "request": {"parameters": p}, "output": report, "status": reconciliation["status"]})
+            self._tool("capture_audit_event", {"run_id": run_id, "agent_id": "fund-reconciliation", "action": "run_completed" if reconciliation["status"] == "matched" else "step_executed", "message": "Fund reconciliation completed", "details": {"exception_count": report["exception_count"]}})
+            return AgentOutput(agent_id="fund-reconciliation", run_id=UUID(run_id), status=reconciliation["status"], result={"reconciliation": reconciliation, "report": report})
         except (KeyError, TypeError, ValueError) as exc:
             return AgentOutput(agent_id="fund-reconciliation", status="invalid_input", warnings=[str(exc)])
 
     def _investigate(self, request: AgentInput) -> AgentOutput:
         exceptions = request.parameters.get("exceptions", [])
-        return AgentOutput(agent_id="exception-investigation", status="completed", result={"exception_count": len(exceptions), "exceptions": exceptions})
+        evidence = [item.get("evidence", {}) for item in exceptions if isinstance(item, dict)]
+        return AgentOutput(agent_id="exception-investigation", status="completed", result={"exception_count": len(exceptions), "exceptions": exceptions, "evidence": evidence})
 
     def _qa(self, request: AgentInput) -> AgentOutput:
         question = str(request.parameters.get("question", "")).strip()
         if not question:
             return AgentOutput(agent_id="fund-data-qa", status="invalid_input", warnings=["question is required"])
-        matches = [r.model_dump(mode="json") for r in request.records if any(str(v).casefold() in question.casefold() for v in r.data.values())]
-        return AgentOutput(agent_id="fund-data-qa", status="completed", result={"question": question, "matches": matches, "evidence": [r.source_evidence() for r in request.records if any(str(v).casefold() in question.casefold() for v in r.data.values())]})
+        result = self._tool("query_records", {"records": [r.model_dump(mode="json") for r in request.records], "filters": request.parameters.get("filters", {})})
+        result["question"] = question
+        return AgentOutput(agent_id="fund-data-qa", status="completed", result=result)
