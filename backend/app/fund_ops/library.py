@@ -4,7 +4,6 @@ from uuid import UUID, uuid4
 
 from app.agent_runtime.container import registry
 from app.agent_runtime.registry import ToolRegistry
-from app.reconciliation.agent import FundReconciliationAgent
 
 from .models import AgentInput, AgentKind, AgentOutput, FundAgentSpec
 
@@ -21,6 +20,11 @@ class FundOperationsLibrary:
         self._agents = {spec.id: spec for spec in self._catalog()}
         self._handlers: dict[str, Callable[[AgentInput], AgentOutput]] = {
             "fund-reconciliation": self._reconcile,
+            "capital-call-review": self._capital_call_review,
+            "nav-review": self._nav_review,
+            "valuation-review": self._valuation_review,
+            "portfolio-exposure": self._portfolio_exposure,
+            "investor-reporting": self._investor_reporting,
             "exception-investigation": self._investigate,
             "fund-data-qa": self._qa,
         }
@@ -30,12 +34,12 @@ class FundOperationsLibrary:
         return [
             FundAgentSpec("fund-reconciliation", "Fund Reconciliation Agent", AgentKind.RECONCILIATION, "Compare two canonical fund datasets and produce evidence-backed exceptions.", capabilities=["composite-key-match", "tolerance", "materiality", "evidence"]),
             FundAgentSpec("excel-quality", "Excel Quality Agent", AgentKind.EXCEL_QUALITY, "Identify source workbook quality risks before ingestion.", capabilities=["structure-check", "header-check", "type-risk"]),
-            FundAgentSpec("capital-call-review", "Capital Call Review Agent", AgentKind.CAPITAL_CALL, "Review capital-call records for deterministic completeness and consistency.", capabilities=["required-field-check", "amount-check"]),
-            FundAgentSpec("nav-review", "NAV Review Agent", AgentKind.NAV_REVIEW, "Review NAV records and surface data-quality exceptions.", capabilities=["completeness", "variance-review"]),
-            FundAgentSpec("valuation-review", "Valuation Review Agent", AgentKind.VALUATION_REVIEW, "Review valuation records for consistency and evidence coverage.", capabilities=["currency-check", "date-check", "variance-review"]),
+            FundAgentSpec("capital-call-review", "Capital Call Review Agent", AgentKind.CAPITAL_CALL, "Review capital-call records for deterministic completeness and consistency.", capabilities=["required-field-check", "duplicate-check", "amount-check"]),
+            FundAgentSpec("nav-review", "NAV Review Agent", AgentKind.NAV_REVIEW, "Review NAV records and surface deterministic data-quality and movement exceptions.", capabilities=["completeness", "negative-check", "variance-review"]),
+            FundAgentSpec("valuation-review", "Valuation Review Agent", AgentKind.VALUATION_REVIEW, "Review valuation records for amount, currency, date and evidence controls.", capabilities=["currency-check", "date-check", "amount-check"]),
             FundAgentSpec("normalization", "Fund Data Normalization Agent", AgentKind.NORMALIZATION, "Normalize mapped source data into the canonical fund model.", capabilities=["type-normalization", "provenance"]),
-            FundAgentSpec("portfolio-exposure", "Portfolio Exposure Agent", AgentKind.PORTFOLIO_EXPOSURE, "Prepare portfolio exposure views from canonical investment records.", capabilities=["aggregation", "grouping"]),
-            FundAgentSpec("investor-reporting", "Investor Reporting Agent", AgentKind.INVESTOR_REPORTING, "Prepare governed investor-reporting datasets from canonical records.", capabilities=["aggregation", "evidence"]),
+            FundAgentSpec("portfolio-exposure", "Portfolio Exposure Agent", AgentKind.PORTFOLIO_EXPOSURE, "Prepare portfolio exposure views from canonical investment records.", capabilities=["aggregation", "grouping", "percentage"]),
+            FundAgentSpec("investor-reporting", "Investor Reporting Agent", AgentKind.INVESTOR_REPORTING, "Prepare governed investor-reporting datasets from canonical records.", capabilities=["aggregation", "uncalled-commitment", "evidence"]),
             FundAgentSpec("exception-investigation", "Exception Investigation Agent", AgentKind.EXCEPTION_INVESTIGATION, "Prioritize and explain existing deterministic exceptions without changing their outcomes.", capabilities=["reason-code", "evidence"]),
             FundAgentSpec("fund-data-qa", "Fund Data Q&A Agent", AgentKind.FUND_DATA_QA, "Answer questions over supplied canonical fund records without fabricating missing data.", capabilities=["record-lookup", "evidence"]),
         ]
@@ -58,18 +62,23 @@ class FundOperationsLibrary:
             raise ValueError(result.error or f"Tool failed: {name}")
         return result.output
 
+    def _run_domain_tool(self, agent_id: str, tool_name: str, request: AgentInput) -> AgentOutput:
+        try:
+            result = self._tool(tool_name, {
+                "records": [r.model_dump(mode="json") for r in request.records],
+                **request.parameters,
+            })
+            return AgentOutput(agent_id=agent_id, status=result.get("status", "completed"), result=result)
+        except (KeyError, TypeError, ValueError) as exc:
+            return AgentOutput(agent_id=agent_id, status="invalid_input", warnings=[str(exc)])
+
     def _reconcile(self, request: AgentInput) -> AgentOutput:
         p = request.parameters
         try:
-            left = p["left_records"]
-            right = p["right_records"]
             reconciliation = self._tool("reconcile_records", {
-                "left_records": left,
-                "right_records": right,
-                "key_fields": p["key_fields"],
-                "amount_field": p.get("amount_field"),
-                "date_field": p.get("date_field"),
-                "currency_field": p.get("currency_field"),
+                "left_records": p["left_records"], "right_records": p["right_records"],
+                "key_fields": p["key_fields"], "amount_field": p.get("amount_field"),
+                "date_field": p.get("date_field"), "currency_field": p.get("currency_field"),
                 "amount_tolerance": p.get("amount_tolerance", 0.0),
                 "amount_tolerance_percent": p.get("amount_tolerance_percent", 0.0),
                 "date_tolerance_days": p.get("date_tolerance_days", 0),
@@ -82,6 +91,21 @@ class FundOperationsLibrary:
             return AgentOutput(agent_id="fund-reconciliation", run_id=UUID(run_id), status=reconciliation["status"], result={"reconciliation": reconciliation, "report": report})
         except (KeyError, TypeError, ValueError) as exc:
             return AgentOutput(agent_id="fund-reconciliation", status="invalid_input", warnings=[str(exc)])
+
+    def _capital_call_review(self, request: AgentInput) -> AgentOutput:
+        return self._run_domain_tool("capital-call-review", "capital_call_review", request)
+
+    def _nav_review(self, request: AgentInput) -> AgentOutput:
+        return self._run_domain_tool("nav-review", "nav_review", request)
+
+    def _valuation_review(self, request: AgentInput) -> AgentOutput:
+        return self._run_domain_tool("valuation-review", "valuation_review", request)
+
+    def _portfolio_exposure(self, request: AgentInput) -> AgentOutput:
+        return self._run_domain_tool("portfolio-exposure", "portfolio_exposure", request)
+
+    def _investor_reporting(self, request: AgentInput) -> AgentOutput:
+        return self._run_domain_tool("investor-reporting", "investor_reporting", request)
 
     def _investigate(self, request: AgentInput) -> AgentOutput:
         exceptions = request.parameters.get("exceptions", [])
