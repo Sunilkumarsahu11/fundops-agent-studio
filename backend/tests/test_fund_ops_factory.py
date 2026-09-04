@@ -13,6 +13,9 @@ from app.agent_runtime.container import registry
         ("Run valuation review for currency and date issues", "valuation_review"),
         ("Analyse portfolio exposure by sector", "portfolio_exposure"),
         ("Prepare investor reporting by investor", "investor_reporting"),
+        ("Check Excel workbook quality before ingestion", "excel_quality"),
+        ("Normalize mapped records into the canonical model", "normalization_review"),
+        ("Investigate and prioritize exceptions", "exception_investigation"),
     ],
 )
 def test_factory_generates_registered_domain_tool(request: str, tool: str):
