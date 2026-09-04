@@ -5,7 +5,7 @@ import json
 import os
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.agent_runtime.models import WorkflowStep
 from app.agent_runtime.registry import ToolRegistry
@@ -16,18 +16,24 @@ from .models import AgentBlueprint, FactoryRequest, ToolSelection
 
 
 class LLMToolSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tool: str
     reason: str
     confidence: float = Field(ge=0, le=1)
 
 
 class LLMWorkflowStep(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     tool: str
     input: dict[str, Any] = Field(default_factory=dict)
     required: bool = True
 
 
 class LLMPlan(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     description: str
     tools: list[LLMToolSelection] = Field(default_factory=list)
@@ -68,7 +74,10 @@ class LLMPlanner:
             self.cache_hits += 1
             return cached.model_copy(deep=True)
         model = self._model()
-        structured = model.with_structured_output(LLMPlan)
+        # Use function calling rather than OpenAI's response_format/json_schema mode.
+        # LLMWorkflowStep.input is intentionally an open-ended JSON object because
+        # different registered FundOps tools have different input shapes.
+        structured = model.with_structured_output(LLMPlan, method="function_calling")
         self.llm_calls += 1
         result = structured.invoke([("system", self._system_prompt()), ("user", text)])
         plan = result if isinstance(result, LLMPlan) else LLMPlan.model_validate(result)
