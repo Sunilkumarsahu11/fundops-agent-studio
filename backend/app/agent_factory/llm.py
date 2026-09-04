@@ -46,12 +46,17 @@ class LLMUnavailableError(RuntimeError):
 
 
 class LLMPlanner:
-    """LangChain-backed planning/explanation layer with deterministic guardrails and caching."""
+    """LangChain-backed planning/explanation layer using OpenAI Responses API.
+
+    The LLM is advisory only. It proposes a declarative workflow; allow-listed tools,
+    deterministic validation and human approval remain authoritative.
+    """
 
     def __init__(self, registry: ToolRegistry, model: str | None = None, api_key: str | None = None) -> None:
         self.registry = registry
         self.model = model or os.getenv("LLM_MODEL", "")
         self.api_key = api_key or os.getenv("LLM_API_KEY", "")
+        self.reasoning_effort = os.getenv("LLM_REASONING_EFFORT", "none")
         self.max_input_chars = int(os.getenv("LLM_MAX_INPUT_CHARS", "12000"))
         self.max_output_tokens = int(os.getenv("LLM_MAX_OUTPUT_TOKENS", "1200"))
         self.max_steps = int(os.getenv("LLM_MAX_PLAN_STEPS", "6"))
@@ -73,11 +78,16 @@ class LLMPlanner:
         if isinstance(cached, AgentBlueprint):
             self.cache_hits += 1
             return cached.model_copy(deep=True)
+
         model = self._model()
-        # Use function calling rather than OpenAI's response_format/json_schema mode.
-        # LLMWorkflowStep.input is intentionally an open-ended JSON object because
-        # different registered FundOps tools have different input shapes.
-        structured = model.with_structured_output(LLMPlan, method="function_calling")
+        # Function calling is kept for the planner because workflow inputs are
+        # intentionally open-ended JSON owned by individual registered tools.
+        # Responses API avoids the Chat Completions + reasoning_effort incompatibility.
+        structured = model.with_structured_output(
+            LLMPlan,
+            method="function_calling",
+            strict=False,
+        )
         self.llm_calls += 1
         result = structured.invoke([("system", self._system_prompt()), ("user", text)])
         plan = result if isinstance(result, LLMPlan) else LLMPlan.model_validate(result)
@@ -104,7 +114,19 @@ class LLMPlanner:
         return explanation
 
     def metrics(self) -> dict[str, Any]:
-        return {"configured": self.configured, "model": self.model or None, "llm_calls": self.llm_calls, "cache_hits": self.cache_hits, "cache_size": len(self._cache), "max_input_chars": self.max_input_chars, "max_output_tokens": self.max_output_tokens, "max_plan_steps": self.max_steps, "max_plan_tools": self.max_tools}
+        return {
+            "configured": self.configured,
+            "model": self.model or None,
+            "reasoning_effort": self.reasoning_effort,
+            "api": "responses",
+            "llm_calls": self.llm_calls,
+            "cache_hits": self.cache_hits,
+            "cache_size": len(self._cache),
+            "max_input_chars": self.max_input_chars,
+            "max_output_tokens": self.max_output_tokens,
+            "max_plan_steps": self.max_steps,
+            "max_plan_tools": self.max_tools,
+        }
 
     def _require_configured(self) -> None:
         if not self.configured:
@@ -115,7 +137,16 @@ class LLMPlanner:
             from langchain_openai import ChatOpenAI
         except ImportError as exc:
             raise LLMUnavailableError("LangChain OpenAI integration is not installed.") from exc
-        return ChatOpenAI(model=self.model, api_key=self.api_key, temperature=0, max_tokens=self.max_output_tokens)
+
+        return ChatOpenAI(
+            model=self.model,
+            api_key=self.api_key,
+            use_responses_api=True,
+            output_version="responses/v1",
+            reasoning={"effort": self.reasoning_effort},
+            max_tokens=self.max_output_tokens,
+            max_retries=2,
+        )
 
     def _to_blueprint(self, request: FactoryRequest, plan: LLMPlan) -> AgentBlueprint:
         allowed = {tool.name: tool for tool in self.registry.definitions()}
@@ -136,7 +167,7 @@ class LLMPlanner:
         if unknown:
             raise ValueError(f"LLM proposed unregistered tools: {sorted(set(unknown))}")
         validate_plan_size(len(steps), len(selections), self.max_steps, self.max_tools)
-        blueprint = AgentBlueprint(name=request.name or plan.name, description=plan.description, source_request=request.request, tools=selections, steps=steps, inputs=request.inputs, metadata={"planner": "langchain-llm", "governance": "allow-listed-tools-only", "llm_model": self.model, "assumptions": plan.assumptions, "llm_guardrails": ["structured-output-only", "allow-listed-tools", "deterministic-financial-controls", "bounded-input", "bounded-plan", "human-approval-before-publish"]})
+        blueprint = AgentBlueprint(name=request.name or plan.name, description=plan.description, source_request=request.request, tools=selections, steps=steps, inputs=request.inputs, metadata={"planner": "langchain-openai-responses", "governance": "allow-listed-tools-only", "llm_model": self.model, "llm_api": "responses", "reasoning_effort": self.reasoning_effort, "assumptions": plan.assumptions, "llm_guardrails": ["structured-output-only", "allow-listed-tools", "deterministic-financial-controls", "bounded-input", "bounded-plan", "human-approval-before-publish"]})
         validation = AgentFactory(self.registry).validate(blueprint)
         if not validation.valid:
             raise ValueError("LLM plan failed deterministic validation: " + "; ".join(validation.errors))
