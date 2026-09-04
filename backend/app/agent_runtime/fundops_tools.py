@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from typing import Any
 from uuid import UUID
 
@@ -52,7 +51,6 @@ def map_source_to_model_tool(inputs: dict[str, Any]) -> dict[str, Any]:
 
 def normalize_records_tool(inputs: dict[str, Any]) -> dict[str, Any]:
     from app.ingestion.normalizer import normalize_value
-    from app.fund_model.schema import FieldType
     field_types = inputs.get("field_types", {})
     output = []
     for record in _records(inputs["records"]):
@@ -112,7 +110,8 @@ def calculate_variance_tool(inputs: dict[str, Any]) -> dict[str, Any]:
 def evaluate_materiality_tool(inputs: dict[str, Any]) -> dict[str, Any]:
     variance = abs(float(inputs["variance"]))
     threshold = float(inputs.get("threshold", 0))
-    return {"materiality": "material" if variance > 0 if threshold <= 0 else variance >= threshold else "immaterial", "variance": variance, "threshold": threshold}
+    material = variance > 0 if threshold <= 0 else variance >= threshold
+    return {"materiality": "material" if material else "immaterial", "variance": variance, "threshold": threshold}
 
 
 def build_exception_report_tool(inputs: dict[str, Any]) -> dict[str, Any]:
