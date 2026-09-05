@@ -72,4 +72,18 @@ def test_cherry_capital_call_integration() -> None:
     assert body["reconciliation"]["agent_id"] == "fund-reconciliation"
     assert body["exception_investigation"]["agent_id"] == "exception-investigation"
     assert body["source_count"] == 3
+    assert len(body["canonical_records"]["matched_cash"]) == 1
     assert body["financial_boundary"].startswith("analysis-only")
+
+
+def test_cherry_integration_does_not_claim_unmatched_cash() -> None:
+    payload = _payload()
+    payload["cherry_analysis"]["matched_transaction_ids"] = []
+
+    response = client.post("/integration/cherry/capital-call", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["canonical_records"]["matched_cash"] == []
+    summary = body["reconciliation"]["result"]["reconciliation"]["summary"]
+    assert summary["missing_right"] == 1
