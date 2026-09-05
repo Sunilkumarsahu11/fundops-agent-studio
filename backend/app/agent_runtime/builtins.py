@@ -12,61 +12,18 @@ from .tool_layer import (
     portfolio_exposure_tool, query_records_tool, reconcile_records_tool, reject_tool,
     request_approval_tool, validate_records_tool, valuation_review_tool,
 )
-from .ylookup_tools import (
-    bank_statement_review_tool, bank_workbook_control_tool,
-    investor_loader_control_tool, journal_entry_control_tool,
-    mapping_gap_control_tool, movements_control_tool, workbook_sheet_summary,
-)
+from .ylookup_tools import bank_statement_review_tool, bank_workbook_control_tool, investor_loader_control_tool, journal_entry_control_tool, mapping_gap_control_tool, movements_control_tool, workbook_sheet_summary
+from .ylookup_transform_tools import bank_pdf_to_canonical_tool, bank_transactions_to_journal_entries_tool, investor_gl_to_loader_tool, loader_reconciliation_tool, loader_rows_from_workbook_tool
 
-
-def echo(inputs: dict[str, Any]) -> dict[str, Any]:
-    return {"received": inputs}
-
-
+def echo(inputs: dict[str, Any]) -> dict[str, Any]: return {"received": inputs}
 def ylookup_workbook_summary_tool(inputs: dict[str, Any]) -> dict[str, Any]:
-    raw = base64.b64decode(inputs["content_base64"], validate=True)
-    return {"file_name": inputs.get("file_name"), "sheets": workbook_sheet_summary(raw)}
-
-
-def _definition(name: str, description: str) -> ToolDefinition:
-    return ToolDefinition(name=name, description=description, input_schema={"type": "object"}, output_schema={"type": "object"})
-
-
+    raw=base64.b64decode(inputs["content_base64"],validate=True); return {"file_name":inputs.get("file_name"),"sheets":workbook_sheet_summary(raw)}
+def _definition(name: str, description: str) -> ToolDefinition: return ToolDefinition(name=name,description=description,input_schema={"type":"object"},output_schema={"type":"object"})
 def register_builtins(registry: Any) -> None:
-    tools = [
-        (_definition("echo", "Reference deterministic tool used for smoke tests."), echo),
-        (_definition("inspect_source", "Inspect an Excel or JSON source and return source structure and locations."), inspect_source_tool),
-        (_definition("ingest_source", "Ingest a source into the configured canonical fund model with provenance."), ingest_source_tool),
-        (_definition("map_source_to_model", "Generate deterministic source-to-canonical-field mapping candidates."), map_source_to_model_tool),
-        (_definition("normalize_records", "Normalize canonical record values according to the configured fund model."), normalize_records_tool),
-        (_definition("validate_records", "Validate canonical records against the configured fund model."), validate_records_tool),
-        (_definition("query_records", "Filter supplied canonical records without external data access."), query_records_tool),
-        (_definition("get_record_evidence", "Return provenance evidence for a supplied canonical record."), get_record_evidence_tool),
-        (_definition("reconcile_records", "Deterministically reconcile two independent canonical record sets."), reconcile_records_tool),
-        (_definition("calculate_variance", "Calculate absolute and percentage variance between two numeric values."), calculate_variance_tool),
-        (_definition("evaluate_materiality", "Classify a variance against a deterministic materiality threshold."), evaluate_materiality_tool),
-        (_definition("build_exception_report", "Build an evidence-backed exception report from a reconciliation result."), build_exception_report_tool),
-        (_definition("capital_call_review", "Review capital calls for required fields, duplicate keys and positive amounts."), capital_call_review_tool),
-        (_definition("nav_review", "Review NAV records for missing, negative and threshold-exceeding NAV movements."), nav_review_tool),
-        (_definition("valuation_review", "Review valuation records for amount, currency and valuation-date controls."), valuation_review_tool),
-        (_definition("portfolio_exposure", "Aggregate investment exposure by a configured portfolio dimension with percentages."), portfolio_exposure_tool),
-        (_definition("investor_reporting", "Build deterministic investor-level reporting totals with uncalled commitment and evidence."), investor_reporting_tool),
-        (_definition("excel_quality", "Inspect an Excel workbook for structural, header, row and blank-column quality risks."), excel_quality_tool),
-        (_definition("normalization_review", "Normalize mapped canonical records and report deterministic normalization warnings."), normalization_review_tool),
-        (_definition("exception_investigation", "Prioritize deterministic exceptions by severity without changing their outcomes."), exception_investigation_tool),
-        (_definition("collect_evidence", "Collect provenance evidence from supplied canonical records."), collect_evidence_tool),
-        (_definition("create_run_snapshot", "Create a governance snapshot for an agent run."), create_run_snapshot_tool),
-        (_definition("capture_audit_event", "Record a governed audit event for an agent run."), capture_audit_event_tool),
-        (_definition("request_approval", "Request human approval for a consequential action."), request_approval_tool),
-        (_definition("approve", "Approve a pending governed action."), approve_tool),
-        (_definition("reject", "Reject a pending governed action."), reject_tool),
-        (_definition("ylookup_workbook_summary", "Summarize sheets, headers and row counts in a Ylookup Excel workbook."), ylookup_workbook_summary_tool),
-        (_definition("ylookup_bank_statement_review", "Parse a Ylookup bank-statement PDF and run deterministic balance, duplicate-reference and debit/credit controls."), bank_statement_review_tool),
-        (_definition("ylookup_bank_workbook_control", "Validate the Ylookup bank-to-journal working workbook against entity, account, vendor, project and related-party references."), bank_workbook_control_tool),
-        (_definition("ylookup_journal_entry_control", "Validate Ylookup DIU journal-entry pairs for double-entry balance, completeness and transaction-reference consistency."), journal_entry_control_tool),
-        (_definition("ylookup_investor_loader_control", "Validate investor-level GL data against the verified loader mapping sheets and deterministic journal-entry controls."), investor_loader_control_tool),
-        (_definition("ylookup_mapping_gap_control", "Extract unresolved mapping gaps from the verified Ylookup loader workbook."), mapping_gap_control_tool),
-        (_definition("ylookup_movements_control", "Validate the verified loader movement reconciliation between debit, credit and net movement."), movements_control_tool),
+    tools=[
+      (_definition("echo","Reference deterministic tool used for smoke tests."),echo),
+      (_definition("inspect_source","Inspect an Excel or JSON source."),inspect_source_tool),(_definition("ingest_source","Ingest a source into the canonical fund model."),ingest_source_tool),(_definition("map_source_to_model","Generate source-to-model mappings."),map_source_to_model_tool),(_definition("normalize_records","Normalize canonical records."),normalize_records_tool),(_definition("validate_records","Validate canonical records."),validate_records_tool),(_definition("query_records","Filter canonical records."),query_records_tool),(_definition("get_record_evidence","Return record provenance."),get_record_evidence_tool),(_definition("reconcile_records","Reconcile two record sets."),reconcile_records_tool),(_definition("calculate_variance","Calculate numeric variance."),calculate_variance_tool),(_definition("evaluate_materiality","Evaluate variance materiality."),evaluate_materiality_tool),(_definition("build_exception_report","Build reconciliation exception report."),build_exception_report_tool),(_definition("capital_call_review","Review capital calls."),capital_call_review_tool),(_definition("nav_review","Review NAV records."),nav_review_tool),(_definition("valuation_review","Review valuations."),valuation_review_tool),(_definition("portfolio_exposure","Aggregate portfolio exposure."),portfolio_exposure_tool),(_definition("investor_reporting","Build investor reporting."),investor_reporting_tool),(_definition("excel_quality","Inspect Excel quality."),excel_quality_tool),(_definition("normalization_review","Review normalization."),normalization_review_tool),(_definition("exception_investigation","Prioritize exceptions."),exception_investigation_tool),(_definition("collect_evidence","Collect provenance evidence."),collect_evidence_tool),(_definition("create_run_snapshot","Create run governance snapshot."),create_run_snapshot_tool),(_definition("capture_audit_event","Record audit event."),capture_audit_event_tool),(_definition("request_approval","Request human approval."),request_approval_tool),(_definition("approve","Approve governed action."),approve_tool),(_definition("reject","Reject governed action."),reject_tool),
+      (_definition("ylookup_workbook_summary","Summarize Ylookup workbook sheets."),ylookup_workbook_summary_tool),(_definition("ylookup_bank_statement_review","Review Ylookup bank statement PDF."),bank_statement_review_tool),(_definition("ylookup_bank_workbook_control","Validate bank working workbook mappings."),bank_workbook_control_tool),(_definition("ylookup_journal_entry_control","Validate Ylookup journal entries."),journal_entry_control_tool),(_definition("ylookup_investor_loader_control","Validate investor GL mappings and balancing."),investor_loader_control_tool),(_definition("ylookup_mapping_gap_control","Extract unresolved loader mapping gaps."),mapping_gap_control_tool),(_definition("ylookup_movements_control","Validate loader movement reconciliation."),movements_control_tool),
+      (_definition("ylookup_bank_pdf_to_canonical","Convert bank statement PDF to canonical transactions."),bank_pdf_to_canonical_tool),(_definition("ylookup_bank_to_journal","Transform canonical bank transactions into journal lines using workbook mappings."),bank_transactions_to_journal_entries_tool),(_definition("ylookup_investor_gl_to_loader","Transform investor-level GL into Phase I loader rows using verified mappings."),investor_gl_to_loader_tool),(_definition("ylookup_loader_rows","Read verified loader rows into JSON records."),loader_rows_from_workbook_tool),(_definition("ylookup_loader_reconciliation","Reconcile generated loader rows against verified loader rows."),loader_reconciliation_tool),
     ]
-    for definition, handler in tools:
-        registry.register(definition, handler)
+    for definition,handler in tools: registry.register(definition,handler)
