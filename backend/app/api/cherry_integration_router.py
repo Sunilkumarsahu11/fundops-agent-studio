@@ -70,14 +70,23 @@ def _cash_records(
     call_id: str,
     lp_id: str,
 ) -> list[CanonicalRecord]:
+    """Convert only Cherry's strongly matched cash into Agent Studio records.
+
+    Cherry owns the strict cash-matching policy. If it supplied no matched transaction IDs,
+    Agent Studio must not reinterpret unrelated fund cash as belonging to this capital call.
+    """
+
     matched_ids = {
-        str(value) for value in request.cherry_analysis.get("matched_transaction_ids", [])
+        str(value) for value in request.cherry_analysis.get("matched_transaction_ids", []) if value
     }
+    if not matched_ids:
+        return []
+
     provenance = _source_provenance(request, "json")
     records: list[CanonicalRecord] = []
     for transaction in request.transactions:
         transaction_id = str(transaction.get("transaction_id") or transaction.get("id") or "")
-        if matched_ids and transaction_id not in matched_ids:
+        if transaction_id not in matched_ids:
             continue
         records.append(
             CanonicalRecord(
@@ -115,7 +124,9 @@ def _collect_exceptions(
             {
                 "code": finding.get("code", "CHERRY_CONTROL"),
                 "severity": "high" if severity == "high" else "medium",
-                "message": finding.get("detail") or finding.get("title") or "Cherry control finding",
+                "message": finding.get("detail")
+                or finding.get("title")
+                or "Cherry control finding",
                 "source": "cherry-strict-controls",
             }
         )
