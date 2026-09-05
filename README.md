@@ -1,8 +1,49 @@
 # FundOps Agent Studio
 
-> **An AI-powered control layer between spreadsheets and fund-management systems.**
+> **A deterministic private-markets agent runtime that can sit behind Cherry FundOps.**
 
-FundOps Agent Studio is a configurable agent platform for private-market fund operations. It turns repetitive Excel, JSON and document-driven workflows into governed, auditable AI workflows.
+FundOps Agent Studio is a configurable agent platform for private-market fund operations. It turns repetitive Excel, JSON and document-driven workflows into governed, auditable workflows while keeping financial calculations inside deterministic tools.
+
+## Cherry FundOps integration
+
+For the Ylookup × Encode product flow, the two repositories stay separate and communicate over a backend API:
+
+```text
+User / judge
+    |
+    |  PDF + Excel + JSON
+    v
+Cherry FundOps
+    |
+    |  PDF extraction + strict controls
+    |  structured case + SHA-256 source hashes
+    v
+FundOps Agent Studio
+    |
+    |  capital-call review
+    |  canonical records / provenance
+    |  fund reconciliation
+    |  exception investigation
+    v
+Cherry FundOps control room
+```
+
+Cherry is the user-facing orchestrator and remains the financial-control authority. Agent Studio is an analysis microservice and does not initiate or authorise payments.
+
+### Integration API
+
+```text
+GET  /integration/cherry/health
+POST /integration/cherry/capital-call
+```
+
+The raw evidence contract is owned by Cherry FundOps and is exactly:
+
+- capital-call **PDF**;
+- commitment/control **Excel (.xlsx)**;
+- fund cash/bank **JSON**.
+
+Agent Studio receives structured records derived from those inputs rather than receiving the original raw files. Source file names and SHA-256 hashes are preserved as provenance.
 
 ## Product vision
 
@@ -17,35 +58,42 @@ Fund managers should be able to describe an operational task in plain English an
 - **Schema-aware data** — heterogeneous fund data is mapped into a canonical model.
 - **Auditability** — retain inputs, mappings, rules, execution state, evidence and outputs.
 
-## MVP
+## Agent catalogue
 
-The first production slice is the **Fund Reconciliation Agent**:
+The reusable FundOps library includes:
 
-1. Upload independent administrator and fund-manager Excel/JSON data.
-2. Inspect and map each source independently.
-3. Normalize entities, dates, currencies and amounts.
-4. Reconcile records and aggregates with configurable tolerances.
-5. Rank material exceptions.
-6. Explain findings with source evidence.
-7. Expose audit and approval state.
+- fund reconciliation;
+- Excel quality review;
+- capital-call review;
+- NAV review;
+- valuation review;
+- normalization;
+- portfolio exposure;
+- investor reporting;
+- exception investigation;
+- fund-data Q&A.
 
-## Phase 10 — LLM layer
+## LLM layer
 
-The Agent Studio now supports an optional LangChain-backed LLM planner:
+The Agent Studio supports an optional LangChain/OpenAI Responses API planning and explanation layer:
 
 ```text
 User request
      |
- LangChain LLM
-     |  structured plan
+     v
+Structured LLM plan
+     |
      v
 Allow-listed Tool Registry
      |
+     v
 Deterministic Agent Runtime
      |
-Financial controls / evidence / audit
+     v
+Financial controls / evidence
      |
-Human approval before publication
+     v
+Human approval where required
 ```
 
 Endpoints:
@@ -54,37 +102,51 @@ Endpoints:
 - `POST /agent-factory/draft-llm`
 - `POST /agent-factory/explain`
 
-The LLM cannot invent tools, execute financial calculations, bypass deterministic validation or publish an agent. See [`docs/PHASE_10_LLM.md`](docs/PHASE_10_LLM.md).
+The LLM cannot invent tools, execute financial calculations, bypass deterministic validation or publish an agent.
 
 ## Architecture
 
 ```text
-React / Agent Studio UI
-          |
-       FastAPI
-          |
-   Agent Factory
-  LLM intent -> structured plan
-          |
-    Agent Runtime
- plan -> execute -> validate -> explain
-          |
-      Tool Registry
- /       |       |        \
-Excel   JSON  Reconcile   Validation
-          |       |           \
-          +---- Fund Data ----+
-                    |
-              PostgreSQL
-                    |
-          Evidence / Audit Trail
+Cherry FundOps / optional React UI
+              |
+           FastAPI
+              |
+       FundOps agent library
+              |
+       Deterministic runtime
+              |
+   Reconciliation / review tools
+              |
+       Canonical fund model
+              |
+     SQLAlchemy + Alembic
+              |
+    PostgreSQL or MySQL
 ```
+
+## Database
+
+The persistence layer uses SQLAlchemy and Alembic. `DATABASE_URL` may point at PostgreSQL or MySQL.
+
+Examples:
+
+```env
+# PostgreSQL
+DATABASE_URL=postgresql+psycopg://fundops:password@host:5432/fundops
+
+# MySQL / existing Cherry database infrastructure
+DATABASE_URL=mysql+pymysql://fundops:password@host:3306/fundops_agent
+```
+
+When sharing the same database server/infrastructure as Cherry Money, give Agent Studio its **own database/schema/table ownership**. Do not point it at Cherry Money business tables and do not make it a second writer to Cherry accounting data.
+
+Current Alembic-managed FundOps tables include the versioned fund-model registry (`fund_models`, `fund_model_versions`, `entity_definitions`, `field_definitions`, and `relationship_definitions`). Runtime/governance state remains suitable for hackathon/demo use; Cherry FundOps remains the authoritative audit/control boundary for the integrated flow.
 
 ## Repository structure
 
 ```text
 backend/          FastAPI API and application services
-frontend/         Agent Studio web UI
+frontend/         Agent Studio web UI (not required by Cherry integration)
 agents/           Agent definitions and templates
 tools/            Reusable deterministic tools
 fund_model/       Canonical private-markets data model
@@ -106,13 +168,14 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-Health endpoint:
+Health endpoints:
 
 ```text
 GET http://localhost:8000/health
+GET http://localhost:8000/integration/cherry/health
 ```
 
-### Configure LLM planning
+### Configure optional LLM planning
 
 ```text
 LLM_PROVIDER=openai
@@ -130,6 +193,12 @@ The application does not require an LLM key to start; deterministic workflows re
 docker compose up
 ```
 
+## Cloud Run microservice deployment
+
+`.github/workflows/deploy-cloudrun.yml` builds only the backend and deploys it as a private Cloud Run service. The workflow expects a Secret Manager secret containing `DATABASE_URL` and can grant the Cherry FundOps runtime service account `roles/run.invoker`.
+
+The deployed service should not be public. Cherry FundOps supports Cloud Run service-to-service identity tokens via `FUNDOPS_STUDIO_API_URL` and `FUNDOPS_STUDIO_AUDIENCE`.
+
 ## Roadmap
 
-See [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) for the complete Phase 0–12 plan. Phase 10 LLM planning, explanation, guardrails and evaluation scaffolding are implemented; remaining work is deployment/security hardening and final hackathon/demo polish.
+See [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) for the broader implementation plan. For the hackathon integration, prioritize one validated user problem and keep the Agent Studio microservice behind the simple Cherry FundOps user experience.
