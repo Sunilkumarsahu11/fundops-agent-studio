@@ -167,7 +167,7 @@ def health() -> dict[str, Any]:
         "service": "fundops-agent-studio",
         "integration": "cherry-fundops-v1",
         "database_ready": database_ready,
-        "database_backend": "postgresql",
+        "database_backend": db_store.engine.dialect.name,
         "accepted_upstream_inputs": ["pdf", "excel", "json"],
         "financial_boundary": "analysis-only; no payment initiation",
     }
@@ -251,7 +251,7 @@ def capital_call(request: CherryCapitalCallCase) -> dict[str, Any]:
         },
         "source_count": len(request.sources),
         "database": {
-            "backend": "postgresql",
+            "backend": db_store.engine.dialect.name,
             "configured_url": bool(settings.database_url),
         },
         "financial_boundary": "analysis-only; Cherry FundOps retains the control decision",
