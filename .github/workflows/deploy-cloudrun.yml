@@ -1,0 +1,84 @@
+name: Deploy backend to Cloud Run
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  REGION: europe-west1
+  SERVICE: fundops-agent-studio
+  REPOSITORY: fundops-agent
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+
+      - id: auth
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Build container
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMAGE="${REGION}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${REPOSITORY}/${SERVICE}:${GITHUB_SHA}"
+          gcloud builds submit backend --tag "${IMAGE}" --project "${{ vars.GCP_PROJECT_ID }}"
+          echo "IMAGE=${IMAGE}" >> "${GITHUB_ENV}"
+
+      - name: Deploy private service
+        shell: bash
+        run: |
+          set -euo pipefail
+          DB_SECRET="${{ vars.FUNDOPS_DATABASE_SECRET }}"
+          if [[ -z "${DB_SECRET}" ]]; then
+            echo "FUNDOPS_DATABASE_SECRET repository/environment variable is required" >&2
+            exit 1
+          fi
+
+          SECRET_ARGS="DATABASE_URL=${DB_SECRET}:latest"
+          if [[ -n "${{ vars.FUNDOPS_LLM_API_KEY_SECRET }}" ]]; then
+            SECRET_ARGS="${SECRET_ARGS},LLM_API_KEY=${{ vars.FUNDOPS_LLM_API_KEY_SECRET }}:latest"
+          fi
+
+          gcloud run deploy "${SERVICE}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${REGION}" \
+            --image "${IMAGE}" \
+            --service-account "${{ vars.FUNDOPS_RUNTIME_SERVICE_ACCOUNT }}" \
+            --no-allow-unauthenticated \
+            --ingress all \
+            --memory 1Gi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 3 \
+            --set-env-vars "APP_ENV=production,LLM_PROVIDER=openai,LLM_MODEL=${{ vars.FUNDOPS_LLM_MODEL }}" \
+            --set-secrets "${SECRET_ARGS}"
+
+      - name: Grant Cherry FundOps invoke permission
+        if: ${{ vars.CHERRY_FINOPS_RUNTIME_SERVICE_ACCOUNT != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud run services add-iam-policy-binding "${SERVICE}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${REGION}" \
+            --member "serviceAccount:${{ vars.CHERRY_FINOPS_RUNTIME_SERVICE_ACCOUNT }}" \
+            --role roles/run.invoker
+
+      - name: Print service URL
+        run: |
+          gcloud run services describe "${SERVICE}" \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --region "${REGION}" \
+            --format='value(status.url)'
