@@ -12,24 +12,26 @@ jobs:
   backend:
     runs-on: ubuntu-latest
     services:
-      postgres:
-        image: postgres:16-alpine
+      mysql:
+        image: mysql:8.4
         env:
-          POSTGRES_DB: fundops
-          POSTGRES_USER: fundops
-          POSTGRES_PASSWORD: fundops
+          MYSQL_DATABASE: cherrybank
+          MYSQL_USER: fundops
+          MYSQL_PASSWORD: fundops
+          MYSQL_ROOT_PASSWORD: root
         ports:
-          - 5432:5432
+          - 3306:3306
         options: >-
-          --health-cmd "pg_isready -U fundops -d fundops"
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -ufundops -pfundops --silent"
           --health-interval 5s
           --health-timeout 5s
-          --health-retries 10
+          --health-retries 20
+          --health-start-period 15s
     defaults:
       run:
         working-directory: backend
     env:
-      DATABASE_URL: postgresql+psycopg://fundops:fundops@localhost:5432/fundops
+      DATABASE_URL: mysql+pymysql://fundops:fundops@127.0.0.1:3306/cherrybank?charset=utf8mb4
       APP_ENV: test
       LLM_MODEL: ""
       LLM_API_KEY: ""
