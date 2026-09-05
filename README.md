@@ -1,12 +1,12 @@
 # FundOps Agent Studio
 
-> **A deterministic private-markets agent runtime that can sit behind Cherry FundOps.**
+> **A deterministic private-markets agent runtime designed to be consolidated into Cherry FundOps.**
 
 FundOps Agent Studio is a configurable agent platform for private-market fund operations. It turns repetitive Excel, JSON and document-driven workflows into governed, auditable workflows while keeping financial calculations inside deterministic tools.
 
 ## Cherry FundOps integration
 
-For the Ylookup × Encode product flow, the two repositories stay separate and communicate over a backend API:
+For the Ylookup × Encode product flow, the current integration is:
 
 ```text
 User / judge
@@ -28,7 +28,7 @@ FundOps Agent Studio
 Cherry FundOps control room
 ```
 
-Cherry is the user-facing orchestrator and remains the financial-control authority. Agent Studio is an analysis microservice and does not initiate or authorise payments.
+Cherry is the user-facing orchestrator and remains the financial-control authority. Agent Studio is analysis-only and does not initiate or authorise payments.
 
 ### Integration API
 
@@ -45,13 +45,51 @@ The raw evidence contract is owned by Cherry FundOps and is exactly:
 
 Agent Studio receives structured records derived from those inputs rather than receiving the original raw files. Source file names and SHA-256 hashes are preserved as provenance.
 
-## Product vision
+## Database: MySQL only
 
-Fund managers should be able to describe an operational task in plain English and get a reusable agent that can ingest fund data, map schemas, run deterministic financial checks, identify exceptions, explain findings and produce evidence-backed outputs.
+FundOps Agent Studio has been converted from PostgreSQL to **MySQL 8** so it can share the same database infrastructure as Cherry Money.
 
-### Core principles
+Example:
 
-- **LLM for reasoning, not arithmetic** — LangChain handles natural-language planning and explanation; financial calculations and validation remain deterministic.
+```env
+DATABASE_URL=mysql+pymysql://fundops:password@mysql-host:3306/cherrybank?charset=utf8mb4
+```
+
+FundOps does not write to Cherry accounting tables. Its own tables are namespaced inside the same MySQL database:
+
+```text
+fundops_alembic_version
+fundops_models
+fundops_model_versions
+fundops_entity_definitions
+fundops_field_definitions
+fundops_relationship_definitions
+```
+
+This gives us one MySQL database while maintaining clear table ownership and avoiding collisions with Laravel migrations.
+
+## Target end-state: one database, one repo
+
+The temporary two-repository integration is intentionally a transition state. The target is:
+
+```text
+cherry-agentic-finops
+    |
+    +-- Cherry PDF / Excel / JSON ingestion
+    +-- strict deterministic controls
+    +-- FundOps agent library
+    +-- reconciliation / exception investigation
+    +-- audit / evidence layer
+    |
+    v
+Shared Cherry MySQL database
+```
+
+Once the MySQL conversion is proven green, the reusable Agent Studio backend modules can be moved into `sohamtech-uk/cherry-agentic-finops`. At that point the HTTP hop between the two repos can be removed and this repository can be archived as the historical source build.
+
+## Product principles
+
+- **LLM for reasoning, not arithmetic** — natural-language planning and explanation are optional; financial calculations and validation remain deterministic.
 - **Evidence first** — every material finding should trace back to a source file, sheet/cell or JSON path.
 - **Human-in-the-loop** — material exceptions and consequential actions can require approval.
 - **Configuration over custom code** — agents are workflows assembled from reusable tools.
@@ -73,37 +111,6 @@ The reusable FundOps library includes:
 - exception investigation;
 - fund-data Q&A.
 
-## LLM layer
-
-The Agent Studio supports an optional LangChain/OpenAI Responses API planning and explanation layer:
-
-```text
-User request
-     |
-     v
-Structured LLM plan
-     |
-     v
-Allow-listed Tool Registry
-     |
-     v
-Deterministic Agent Runtime
-     |
-     v
-Financial controls / evidence
-     |
-     v
-Human approval where required
-```
-
-Endpoints:
-
-- `GET /agent-factory/llm/status`
-- `POST /agent-factory/draft-llm`
-- `POST /agent-factory/explain`
-
-The LLM cannot invent tools, execute financial calculations, bypass deterministic validation or publish an agent.
-
 ## Architecture
 
 ```text
@@ -121,39 +128,7 @@ Cherry FundOps / optional React UI
               |
      SQLAlchemy + Alembic
               |
-    PostgreSQL or MySQL
-```
-
-## Database
-
-The persistence layer uses SQLAlchemy and Alembic. `DATABASE_URL` may point at PostgreSQL or MySQL.
-
-Examples:
-
-```env
-# PostgreSQL
-DATABASE_URL=postgresql+psycopg://fundops:password@host:5432/fundops
-
-# MySQL / existing Cherry database infrastructure
-DATABASE_URL=mysql+pymysql://fundops:password@host:3306/fundops_agent
-```
-
-When sharing the same database server/infrastructure as Cherry Money, give Agent Studio its **own database/schema/table ownership**. Do not point it at Cherry Money business tables and do not make it a second writer to Cherry accounting data.
-
-Current Alembic-managed FundOps tables include the versioned fund-model registry (`fund_models`, `fund_model_versions`, `entity_definitions`, `field_definitions`, and `relationship_definitions`). Runtime/governance state remains suitable for hackathon/demo use; Cherry FundOps remains the authoritative audit/control boundary for the integrated flow.
-
-## Repository structure
-
-```text
-backend/          FastAPI API and application services
-frontend/         Agent Studio web UI (not required by Cherry integration)
-agents/           Agent definitions and templates
-tools/            Reusable deterministic tools
-fund_model/       Canonical private-markets data model
-workflows/        Declarative agent workflows
-sample_data/      Synthetic/demo fund data
-docs/             Architecture and implementation documentation
-tests/            Cross-component tests
+           MySQL 8
 ```
 
 ## Development
@@ -175,7 +150,7 @@ GET http://localhost:8000/health
 GET http://localhost:8000/integration/cherry/health
 ```
 
-### Configure optional LLM planning
+### Optional LLM planning
 
 ```text
 LLM_PROVIDER=openai
@@ -193,12 +168,19 @@ The application does not require an LLM key to start; deterministic workflows re
 docker compose up
 ```
 
-## Cloud Run microservice deployment
+The local stack now starts MySQL 8, applies the namespaced FundOps Alembic migration and starts the backend.
 
-`.github/workflows/deploy-cloudrun.yml` builds only the backend and deploys it as a private Cloud Run service. The workflow expects a Secret Manager secret containing `DATABASE_URL` and can grant the Cherry FundOps runtime service account `roles/run.invoker`.
+## Cloud Run deployment
 
-The deployed service should not be public. Cherry FundOps supports Cloud Run service-to-service identity tokens via `FUNDOPS_STUDIO_API_URL` and `FUNDOPS_STUDIO_AUDIENCE`.
+`.github/workflows/deploy-cloudrun.yml` builds only the backend and deploys it as a private Cloud Run service. `FUNDOPS_DATABASE_SECRET` should contain a MySQL `DATABASE_URL` pointing at the shared Cherry database. The service should remain private while the two-repository transition exists.
 
-## Roadmap
+## Consolidation rule
 
-See [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) for the broader implementation plan. For the hackathon integration, prioritize one validated user problem and keep the Agent Studio microservice behind the simple Cherry FundOps user experience.
+Do not build new permanent functionality in both repos. Until consolidation is complete:
+
+- Cherry owns raw PDF + Excel + JSON ingestion and financial-control outcomes.
+- Agent Studio owns reusable analysis-agent code.
+- MySQL is the shared database engine.
+- New Agent Studio tables must use the `fundops_` prefix.
+
+The final consolidation target is `sohamtech-uk/cherry-agentic-finops` as the single runtime repository.
