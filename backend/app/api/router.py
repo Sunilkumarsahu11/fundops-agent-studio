@@ -8,13 +8,14 @@ from app.agent_runtime.runtime import AgentRuntime
 from app.agent_runtime.store import InMemoryAgentStore
 from app.agent_factory.factory import AgentFactory
 from app.api.agent_factory_router import router as agent_factory_router
+from app.api.cherry_integration_router import router as cherry_integration_router
 from app.api.fund_model_router import router as fund_model_router
-from app.api.ingestion_router import router as ingestion_router
-from app.api.reconciliation_router import router as reconciliation_router
-from app.api.fund_reconciliation_router import router as fund_reconciliation_router
 from app.api.fund_ops_router import router as fund_ops_router
+from app.api.fund_reconciliation_router import router as fund_reconciliation_router
 from app.api.governance_router import router as governance_router
 from app.api.governance_router import service as governance_service
+from app.api.ingestion_router import router as ingestion_router
+from app.api.reconciliation_router import router as reconciliation_router
 
 router = APIRouter()
 store = InMemoryAgentStore()
@@ -26,6 +27,7 @@ router.include_router(fund_reconciliation_router)
 router.include_router(agent_factory_router)
 router.include_router(fund_ops_router)
 router.include_router(governance_router)
+router.include_router(cherry_integration_router)
 
 
 @router.get("/health", tags=["system"])

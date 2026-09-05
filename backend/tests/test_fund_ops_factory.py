@@ -6,7 +6,7 @@ from app.agent_runtime.container import registry
 
 
 @pytest.mark.parametrize(
-    ("request", "tool"),
+    ("request_text", "tool"),
     [
         ("Review capital calls for missing fields and invalid amounts", "capital_call_review"),
         ("Perform a NAV review and flag large movements", "nav_review"),
@@ -18,8 +18,8 @@ from app.agent_runtime.container import registry
         ("Investigate and prioritize exceptions", "exception_investigation"),
     ],
 )
-def test_factory_generates_registered_domain_tool(request: str, tool: str):
+def test_factory_generates_registered_domain_tool(request_text: str, tool: str):
     factory = AgentFactory(registry)
-    blueprint = factory.draft(FactoryRequest(request=request))
+    blueprint = factory.draft(FactoryRequest(request=request_text))
     assert [step.tool for step in blueprint.steps] == [tool]
     assert factory.validate(blueprint).valid

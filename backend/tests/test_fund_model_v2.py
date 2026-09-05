@@ -18,8 +18,9 @@ def test_diff_detects_breaking_change():
     new = old.model_copy(deep=True)
     new.version = 2
     fund = next(entity for entity in new.entities if entity.name == "Fund")
-    fund.fields[1].required = True
-    fund.fields[1].nullable = False
+    currency = next(field for field in fund.fields if field.name == "currency")
+    currency.required = True
+    currency.nullable = False
     result = diff_models(old, new)
     assert result["compatible"] is False
     assert any(item["kind"] == "field_required" for item in result["changes"])
@@ -31,7 +32,20 @@ def test_overlay_adds_client_specific_field():
         id="client-a-model",
         name="Client A Fund Model",
         version=1,
-        entities=[EntityDefinition(name="Fund", label="Fund", fields=[FieldDefinition(name="risk_rating", label="Risk Rating", type=FieldType.ENUM, enum_values=["low", "medium", "high"])])],
+        entities=[
+            EntityDefinition(
+                name="Fund",
+                label="Fund",
+                fields=[
+                    FieldDefinition(
+                        name="risk_rating",
+                        label="Risk Rating",
+                        type=FieldType.ENUM,
+                        enum_values=["low", "medium", "high"],
+                    )
+                ],
+            )
+        ],
     )
     result = apply_overlay(base, overlay)
     fund = next(entity for entity in result.entities if entity.name == "Fund")

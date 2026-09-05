@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import base64
 from collections import Counter
 from typing import Any
 
+from app.fund_model.records import CanonicalRecord
 from app.ingestion.models import SourceFormat
 from app.ingestion.pipeline import inspect_source
-from app.fund_model.records import CanonicalRecord
 
 from .tool_layer import normalize_records_tool
 
@@ -15,8 +16,6 @@ def _records(inputs: dict[str, Any]) -> list[CanonicalRecord]:
 
 
 def _content(inputs: dict[str, Any]) -> tuple[str, bytes, SourceFormat]:
-    import base64
-
     file_name = str(inputs["file_name"])
     encoded = inputs.get("content_base64")
     if not isinstance(encoded, str):
@@ -26,7 +25,12 @@ def _content(inputs: dict[str, Any]) -> tuple[str, bytes, SourceFormat]:
     except ValueError as exc:
         raise ValueError("content_base64 is not valid base64") from exc
     raw_format = inputs.get("source_format")
-    fmt = SourceFormat(raw_format) if raw_format else SourceFormat.EXCEL if file_name.lower().endswith((".xlsx", ".xlsm", ".xltx", ".xltm")) else SourceFormat.JSON
+    if raw_format:
+        fmt = SourceFormat(raw_format)
+    elif file_name.lower().endswith((".xlsx", ".xlsm", ".xltx", ".xltm")):
+        fmt = SourceFormat.EXCEL
+    else:
+        fmt = SourceFormat.JSON
     return file_name, content, fmt
 
 
@@ -40,28 +44,84 @@ def excel_quality_tool(inputs: dict[str, Any]) -> dict[str, Any]:
     issues: list[dict[str, Any]] = []
     sheets: list[dict[str, Any]] = []
     for table in tables:
-        headers = list(table.headers)
-        duplicate_headers = [h for h, count in Counter(headers).items() if count > 1]
+        headers = [column.name for column in table.columns]
+        duplicate_headers = [header for header, count in Counter(headers).items() if count > 1]
         row_count = len(table.rows)
         if not headers:
-            issues.append({"code": "MISSING_HEADERS", "sheet": table.name, "message": "No usable header row detected"})
+            issues.append(
+                {
+                    "code": "MISSING_HEADERS",
+                    "sheet": table.name,
+                    "message": "No usable header row detected",
+                }
+            )
         if len(headers) < min_columns:
-            issues.append({"code": "TOO_FEW_COLUMNS", "sheet": table.name, "message": f"Expected at least {min_columns} columns"})
+            issues.append(
+                {
+                    "code": "TOO_FEW_COLUMNS",
+                    "sheet": table.name,
+                    "message": f"Expected at least {min_columns} columns",
+                }
+            )
         if row_count < min_rows:
-            issues.append({"code": "TOO_FEW_ROWS", "sheet": table.name, "message": f"Expected at least {min_rows} data rows"})
+            issues.append(
+                {
+                    "code": "TOO_FEW_ROWS",
+                    "sheet": table.name,
+                    "message": f"Expected at least {min_rows} data rows",
+                }
+            )
         if duplicate_headers:
-            issues.append({"code": "DUPLICATE_HEADERS", "sheet": table.name, "headers": duplicate_headers})
-        blank_columns = [h for h in headers if not any(row.get(h) not in (None, "") for row in table.rows)]
+            issues.append(
+                {
+                    "code": "DUPLICATE_HEADERS",
+                    "sheet": table.name,
+                    "headers": duplicate_headers,
+                }
+            )
+        blank_columns = [
+            header
+            for header in headers
+            if not any(row.get(header) not in (None, "") for row in table.rows)
+        ]
         if blank_columns:
-            issues.append({"code": "BLANK_COLUMNS", "sheet": table.name, "headers": blank_columns})
-        sheets.append({"sheet": table.name, "columns": len(headers), "rows": row_count, "headers": headers, "duplicate_headers": duplicate_headers})
-    return {"status": "issues" if issues else "passed", "file_name": file_name, "sheet_count": len(sheets), "sheets": sheets, "issue_count": len(issues), "issues": issues}
+            issues.append(
+                {
+                    "code": "BLANK_COLUMNS",
+                    "sheet": table.name,
+                    "headers": blank_columns,
+                }
+            )
+        sheets.append(
+            {
+                "sheet": table.name,
+                "columns": len(headers),
+                "rows": row_count,
+                "headers": headers,
+                "duplicate_headers": duplicate_headers,
+            }
+        )
+    return {
+        "status": "issues" if issues else "passed",
+        "file_name": file_name,
+        "sheet_count": len(sheets),
+        "sheets": sheets,
+        "issue_count": len(issues),
+        "issues": issues,
+    }
 
 
 def normalization_review_tool(inputs: dict[str, Any]) -> dict[str, Any]:
     result = normalize_records_tool(inputs)
     records = _records({"records": result.get("records", [])})
-    return {"status": "warnings" if result.get("warnings") else "normalized", "record_count": len(records), "records": [r.model_dump(mode="json") for r in records], "warning_count": len(result.get("warnings", [])), "warnings": result.get("warnings", [])}
+    warnings = result.get("warnings", [])
+    return {
+        "status": "warnings" if warnings else "normalized",
+        "record_count": len(records),
+        "records": [record.model_dump(mode="json") for record in records],
+        "warning_count": len(warnings),
+        "warnings": warnings,
+    }
 
 
 def exception_investigation_tool(inputs: dict[str, Any]) -> dict[str, Any]:
@@ -76,7 +136,31 @@ def exception_investigation_tool(inputs: dict[str, Any]) -> dict[str, Any]:
         severity = str(item.get("severity", default_severity)).lower()
         if severity not in severity_order:
             severity = default_severity if default_severity in severity_order else "medium"
-        enriched.append({**item, "exception_id": str(item.get("exception_id", item.get("record_id", index + 1))), "code": code, "severity": severity, "priority": severity_order[severity]})
-    enriched.sort(key=lambda x: (x["priority"], str(x["code"]), str(x["exception_id"])))
+        enriched.append(
+            {
+                **item,
+                "exception_id": str(
+                    item.get("exception_id", item.get("record_id", index + 1))
+                ),
+                "code": code,
+                "severity": severity,
+                "priority": severity_order[severity],
+            }
+        )
+    enriched.sort(
+        key=lambda item: (
+            item["priority"],
+            str(item["code"]),
+            str(item["exception_id"]),
+        )
+    )
     counts = Counter(item["severity"] for item in enriched)
-    return {"status": "exceptions" if enriched else "passed", "exception_count": len(enriched), "severity_counts": dict(counts), "exceptions": enriched, "principle": "Prioritisation is deterministic; original exception outcomes are unchanged."}
+    return {
+        "status": "exceptions" if enriched else "passed",
+        "exception_count": len(enriched),
+        "severity_counts": dict(counts),
+        "exceptions": enriched,
+        "principle": (
+            "Prioritisation is deterministic; original exception outcomes are unchanged."
+        ),
+    }

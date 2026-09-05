@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     api_host: str = "0.0.0.0"
     api_port: int = 8000
-    database_url: str = "postgresql+psycopg://fundops:fundops@localhost:5432/fundops"
+    database_url: str = "mysql+pymysql://fundops:fundops@localhost:3306/cherrybank?charset=utf8mb4"
     llm_provider: str = "openai"
     llm_model: str = ""
     llm_api_key: str = ""

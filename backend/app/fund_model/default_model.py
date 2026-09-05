@@ -79,3 +79,8 @@ def default_fund_model() -> FundModelDefinition:
             ),
         ],
     )
+
+
+def build_default_model() -> FundModelDefinition:
+    """Backward-compatible factory name used by the v2 model and ingestion tests."""
+    return default_fund_model()
