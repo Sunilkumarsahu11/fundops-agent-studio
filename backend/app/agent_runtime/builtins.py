@@ -1,3 +1,4 @@
+import base64
 from typing import Any
 
 from .models import ToolDefinition
@@ -12,18 +13,19 @@ from .tool_layer import (
     request_approval_tool, validate_records_tool, valuation_review_tool,
 )
 from .ylookup_tools import (
-    bank_statement_review_tool,
-    bank_workbook_control_tool,
-    investor_loader_control_tool,
-    journal_entry_control_tool,
-    mapping_gap_control_tool,
-    movements_control_tool,
-    workbook_sheet_summary,
+    bank_statement_review_tool, bank_workbook_control_tool,
+    investor_loader_control_tool, journal_entry_control_tool,
+    mapping_gap_control_tool, movements_control_tool, workbook_sheet_summary,
 )
 
 
 def echo(inputs: dict[str, Any]) -> dict[str, Any]:
     return {"received": inputs}
+
+
+def ylookup_workbook_summary_tool(inputs: dict[str, Any]) -> dict[str, Any]:
+    raw = base64.b64decode(inputs["content_base64"], validate=True)
+    return {"file_name": inputs.get("file_name"), "sheets": workbook_sheet_summary(raw)}
 
 
 def _definition(name: str, description: str) -> ToolDefinition:
@@ -58,9 +60,9 @@ def register_builtins(registry: Any) -> None:
         (_definition("request_approval", "Request human approval for a consequential action."), request_approval_tool),
         (_definition("approve", "Approve a pending governed action."), approve_tool),
         (_definition("reject", "Reject a pending governed action."), reject_tool),
-        (_definition("ylookup_workbook_summary", "Summarize sheets, headers and row counts in a Ylookup Excel workbook."), workbook_sheet_summary),
+        (_definition("ylookup_workbook_summary", "Summarize sheets, headers and row counts in a Ylookup Excel workbook."), ylookup_workbook_summary_tool),
         (_definition("ylookup_bank_statement_review", "Parse a Ylookup bank-statement PDF and run deterministic balance, duplicate-reference and debit/credit controls."), bank_statement_review_tool),
-        (_definition("ylookup_bank_workbook_control", "Validate the Ylookup bank-to-journal working workbook against its entity, account, vendor, project and related-party reference sheets."), bank_workbook_control_tool),
+        (_definition("ylookup_bank_workbook_control", "Validate the Ylookup bank-to-journal working workbook against entity, account, vendor, project and related-party references."), bank_workbook_control_tool),
         (_definition("ylookup_journal_entry_control", "Validate Ylookup DIU journal-entry pairs for double-entry balance, completeness and transaction-reference consistency."), journal_entry_control_tool),
         (_definition("ylookup_investor_loader_control", "Validate investor-level GL data against the verified loader mapping sheets and deterministic journal-entry controls."), investor_loader_control_tool),
         (_definition("ylookup_mapping_gap_control", "Extract unresolved mapping gaps from the verified Ylookup loader workbook."), mapping_gap_control_tool),
