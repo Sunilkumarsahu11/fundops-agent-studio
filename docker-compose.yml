@@ -1,19 +1,24 @@
 services:
-  postgres:
-    image: postgres:16-alpine
+  mysql:
+    image: mysql:8.4
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
     environment:
-      POSTGRES_DB: fundops
-      POSTGRES_USER: fundops
-      POSTGRES_PASSWORD: fundops
+      MYSQL_DATABASE: cherrybank
+      MYSQL_USER: fundops
+      MYSQL_PASSWORD: fundops
+      MYSQL_ROOT_PASSWORD: root
     ports:
-      - "5432:5432"
+      - "3306:3306"
     volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U fundops -d fundops"]
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -ufundops -pfundops --silent"]
       interval: 5s
       timeout: 5s
-      retries: 10
+      retries: 20
+      start_period: 15s
 
   backend:
     build:
@@ -23,7 +28,7 @@ services:
     volumes:
       - ./backend:/workspace
     environment:
-      DATABASE_URL: postgresql+psycopg://fundops:fundops@postgres:5432/fundops
+      DATABASE_URL: mysql+pymysql://fundops:fundops@mysql:3306/cherrybank?charset=utf8mb4
       LLM_PROVIDER: ${LLM_PROVIDER:-openai}
       LLM_MODEL: ${LLM_MODEL:-}
       LLM_API_KEY: ${LLM_API_KEY:-}
@@ -42,7 +47,7 @@ services:
       retries: 10
       start_period: 20s
     depends_on:
-      postgres:
+      mysql:
         condition: service_healthy
 
   frontend:
@@ -63,4 +68,4 @@ services:
         condition: service_healthy
 
 volumes:
-  postgres_data:
+  mysql_data:
